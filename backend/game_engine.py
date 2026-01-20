@@ -1,6 +1,6 @@
 from sqlalchemy.orm import Session
-from models import Component, Player
-from seed import ZoneType
+from backend.models import Component, Player
+from backend.seed import ZoneType
 
 
 def draw_card(db: Session, player_id: int, deck_type: ZoneType):

@@ -1,5 +1,5 @@
-from database import SessionLocal, engine
-from models import Base, Game, Player, Component
+from backend.database import SessionLocal, engine
+from backend.models import Base, Game, Player, Component
 
 import enum
 

@@ -1,10 +1,12 @@
+import os
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
-from models import Base  # Importing the Base class you defined
+from backend.models import Base  # Importing the Base class you defined
 
 # 1. Define the Database URL
-# This creates a file named 'disruptopia.db' in your backend folder
-SQLALCHEMY_DATABASE_URL = "sqlite:///./disruptopia.db"
+BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+db_path = os.path.join(BASE_DIR, "disruptopia.db")
+SQLALCHEMY_DATABASE_URL = f"sqlite:///{db_path}"
 
 # 2. Create the Engine
 # 'check_same_thread' is only needed for SQLite to allow multi-user access
