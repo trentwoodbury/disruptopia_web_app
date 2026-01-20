@@ -1,5 +1,5 @@
 from sqlalchemy.orm import Session
-from backend.models import Component, Player
+from backend.models import Component, Player, CardDetails
 from backend.seed import ZoneType
 
 
@@ -54,3 +54,42 @@ def move_piece(db: Session, component_id: int, new_x: float, new_y: float):
         return {"success": True, "component_id": component_id, "x": new_x, "y": new_y}
 
     return {"error": "Piece not found"}
+
+
+def play_card(db: Session, player_id: int, card_id: int, target_slot: int = None):
+    card = db.query(Component).filter(Component.id == card_id).first()
+
+    if not card or card.owner_id != player_id:
+        return {"error": f"Player {player_id} does not own this card."}
+
+    # Handle Effect Cards
+    if card.card_details.is_effect:
+        if target_slot is None:
+            return {"error": "Target slot cannot be None for Effect Cards."}
+        if not (1 <= target_slot <= 3):
+            return {"error": "Invalid slot. Must be 1, 2, or 3."}
+
+        target_zone = f"active_effect_card_slot_{target_slot}_p{player_id}"
+
+        # Check if slot is occupied
+        existing_occupant = db.query(Component).filter(
+            Component.zone == target_zone,
+            Component.game_id == card.game_id
+        ).first()
+
+        if existing_occupant:
+            # Note: card.sub_type should be "research", "influence", or "sabotage"
+            existing_occupant.zone = f"{existing_occupant.sub_type}_discard"
+            existing_occupant.owner_id = None
+
+        card.zone = target_zone
+
+    # Handling for Action Cards
+    else:
+        if target_slot is not None:
+            return {"error": "Action cards cannot be played into Effect Card slots."}
+        card.zone = f"{card.sub_type}_discard"
+        card.owner_id = None
+
+    db.commit()
+    return {"action": "card_played", "card_id": card.id, "new_zone": card.zone}

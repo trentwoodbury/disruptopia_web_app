@@ -1,45 +1,57 @@
-import sys
-import os
+import pytest
+from backend.database import SessionLocal, engine
+from backend.models import Base, Component
+from backend.game_engine import draw_card, play_card
+from backend.enums import ZoneType
+from backend.seed import seed_initial_game
 
-# Add the project root to sys.path so we can import from 'backend'
-sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
 
-from backend.database import SessionLocal
-from backend.models import Component
-from backend.game_engine import draw_card
-from backend.seed import ZoneType
+@pytest.fixture(autouse=True)
+def setup_database():
+    """This runs before EVERY test function."""
+    Base.metadata.drop_all(bind=engine)
+    Base.metadata.create_all(bind=engine)
+    seed_initial_game()
+    yield  # This is where the test happens
+    # Optional: cleanup after test
 
 
 def test_draw_research_card():
     db = SessionLocal()
     try:
-        # 1. Draw Card into player 1's hand.
-        card_id = 2  # 'unethical_data_source' card in the research deck
         player_id = 1
-
-        print(f"Testing: Player {player_id} drawing Research Card...")
-
-        # 2. do the actual engine function
         result = draw_card(db, player_id, ZoneType.RESEARCH_DECK)
-
-        # 3. Validation
-        if "error" in result:
-            print(f"Test Failed: {result['error']}")
-            return
-
-        # 4. Query the DB to see if the change persisted
-        updated_card = db.query(Component).filter(Component.id == card_id).first()
+        assert "error" not in result
+        drawn_card_id = result["component_id"]
+        updated_card = db.query(Component).filter(Component.id == drawn_card_id).first()
 
         assert updated_card.zone == "hand_p1"
         assert updated_card.owner_id == player_id
-
-        print("Success!")
-        print(f"Card '{updated_card.name}' moved to {updated_card.zone}.")
-        print(f"Broadcast Result: {result}")
-
     finally:
         db.close()
 
 
-if __name__ == "__main__":
-    test_draw_research_card()
+def test_play_effect_card():
+    db = SessionLocal()
+    try:
+        player_id = 1
+        card_id = 1
+        target_slot = 1
+
+        # Setup state
+        card = db.query(Component).filter(Component.id == card_id).first()
+        card.zone = f"hand_p{player_id}"
+        card.owner_id = player_id
+        db.commit()
+
+        # Execute
+        result = play_card(db, player_id, card_id, target_slot)
+
+        # Validation
+        expected_zone = f"active_effect_card_slot_{target_slot}_p{player_id}"
+
+        # Pytest will show a beautiful diff if this fails!
+        assert card.zone == expected_zone
+        assert card.owner_id == player_id
+    finally:
+        db.close()

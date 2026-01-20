@@ -31,6 +31,16 @@ class Player(Base):
     game: Mapped["Game"] = relationship(back_populates="players")
 
 
+class CardDetails(Base):
+    __tablename__ = "card_details"
+    id: Mapped[int] = mapped_column(primary_key=True)
+    name: Mapped[str] = mapped_column(String(100), unique=True)
+    is_effect: Mapped[bool] = mapped_column(Boolean, default=False) #  True = Effect Card. False = Action Card.
+    qty: Mapped[str] = mapped_column(String(20))  # How many of this card are there in the deck?
+    cost: Mapped[int] = mapped_column(Integer)  # How many tech workers must be used to play this card
+    deck: Mapped[str] = mapped_column(String(50))  # One of the CardCategory Enum values.
+
+
 class Component(Base):
     """
     Represents any physical object: Cards, Tokens, or Board Pieces.
@@ -39,6 +49,8 @@ class Component(Base):
 
     id: Mapped[int] = mapped_column(primary_key=True)
     game_id: Mapped[int] = mapped_column(ForeignKey("games.id"))
+    card_details_id: Mapped[Optional[int]] = mapped_column(ForeignKey("card_details.id"))
+    card_details: Mapped[Optional["CardDetails"]] = relationship()
 
     # Metadata
     name: Mapped[str] = mapped_column(String(100))  # e.g., "Policy_Card_01"
