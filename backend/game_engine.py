@@ -1,9 +1,25 @@
 from sqlalchemy import func
 from sqlalchemy.orm import Session
 
-from backend.config import COMPUTE_UPGRADE_COSTS, COMPUTE_NET_WORTH_REQ, MODEL_NET_WORTH_REQ, WORLD_MAP, \
-    NET_WORTH_COSTS, RECRUIT_COSTS, MODEL_WORKER_COSTS, MARKETING_BONUSES
-from backend.models import Component, Player, CardDetails, WorkerPlacement, Game, Presence, RegionState
+from backend.config import (
+    COMPUTE_UPGRADE_COSTS,
+    COMPUTE_NET_WORTH_REQ,
+    MODEL_NET_WORTH_REQ,
+    WORLD_MAP,
+    NET_WORTH_COSTS,
+    RECRUIT_COSTS,
+    MODEL_WORKER_COSTS,
+    MARKETING_BONUSES,
+)
+from backend.models import (
+    Component,
+    Player,
+    CardDetails,
+    WorkerPlacement,
+    Game,
+    Presence,
+    RegionState,
+)
 from backend.seed import ZoneType
 
 
@@ -13,10 +29,14 @@ def draw_card(db: Session, player_id: int, deck_type: ZoneType):
     """
     # 1. Find the "top" card of the requested deck
     # In a real game, you'd shuffle or pick the first one
-    card = db.query(Component).filter(
-        Component.zone == deck_type.value,
-        Component.game_id == 1  # TODO: Hardcoded for now, will be dynamic later
-    ).first()
+    card = (
+        db.query(Component)
+        .filter(
+            Component.zone == deck_type.value,
+            Component.game_id == 1,  # TODO: Hardcoded for now, will be dynamic later
+        )
+        .first()
+    )
 
     if not card:
         # TODO: Add handling for reshuffling the discard
@@ -38,7 +58,7 @@ def draw_card(db: Session, player_id: int, deck_type: ZoneType):
         "action": "card_drawn",
         "player_id": player_id,
         "component_id": card.id,
-        "new_zone": card.zone
+        "new_zone": card.zone,
     }
 
 
@@ -76,10 +96,11 @@ def play_card(db: Session, player_id: int, card_id: int, target_slot: int = None
         target_zone = f"active_effect_card_slot_{target_slot}_p{player_id}"
 
         # Check if slot is occupied
-        existing_occupant = db.query(Component).filter(
-            Component.zone == target_zone,
-            Component.game_id == card.game_id
-        ).first()
+        existing_occupant = (
+            db.query(Component)
+            .filter(Component.zone == target_zone, Component.game_id == card.game_id)
+            .first()
+        )
 
         if existing_occupant:
             # Note: card.sub_type should be "research", "influence", or "sabotage"
@@ -110,10 +131,12 @@ def buy_chips(db: Session, player_id: int):
     # 2. Check Corporate Funds
     cost = COMPUTE_UPGRADE_COSTS.get(next_level)
     if player.corporate_funds < cost:
-        return {"error": f"Insufficient funds. Need ${cost}, have ${player.corporate_funds}."}
+        return {
+            "error": f"Insufficient funds. Need ${cost}, have ${player.corporate_funds}."
+        }
 
     # 3. Check Net Worth Gate
-    required_nw = COMPUTE_NET_WORTH_REQ.get(next_level, 0) # Default to Startup (0)
+    required_nw = COMPUTE_NET_WORTH_REQ.get(next_level, 0)  # Default to Startup (0)
     if player.net_worth_level < required_nw:
         nw_name = "Millionaire" if required_nw == 1 else "Billionaire"
         return {"error": f"Net Worth too low. Upgrade to {nw_name} first."}
@@ -126,7 +149,7 @@ def buy_chips(db: Session, player_id: int):
     return {
         "action": "compute_upgraded",
         "new_level": player.compute_level,
-        "remaining_funds": player.corporate_funds
+        "remaining_funds": player.corporate_funds,
     }
 
 
@@ -159,7 +182,7 @@ def train_model(db: Session, player_id: int, worker_count: int = 1):
         "action": "model_trained",
         "new_version": player.model_version,
         "new_power": player.power,
-        "new_income": player.income
+        "new_income": player.income,
     }
 
 
@@ -167,7 +190,11 @@ def scale_presence(db: Session, player_id: int, target_region: int):
     player = db.get(Player, player_id)
 
     # 1. Check if already present
-    existing = db.query(Presence).filter_by(player_id=player_id, region_id=target_region).first()
+    existing = (
+        db.query(Presence)
+        .filter_by(player_id=player_id, region_id=target_region)
+        .first()
+    )
     if existing:
         return {"error": "Player already has presence in this region."}
 
@@ -183,7 +210,9 @@ def scale_presence(db: Session, player_id: int, target_region: int):
             break
 
     if not is_adjacent:
-        return {"error": f"Region {target_region} is not adjacent to your current presence."}
+        return {
+            "error": f"Region {target_region} is not adjacent to your current presence."
+        }
 
     # 3. Execute Movement
     new_presence = Presence(player_id=player_id, region_id=target_region)
@@ -191,10 +220,11 @@ def scale_presence(db: Session, player_id: int, target_region: int):
     player.presence_count += 1
 
     # 4. Claim Subsidy Token if available
-    region_state = db.query(RegionState).filter_by(
-        game_id=player.game_id,
-        region_id=target_region
-    ).first()
+    region_state = (
+        db.query(RegionState)
+        .filter_by(game_id=player.game_id, region_id=target_region)
+        .first()
+    )
 
     claimed = False
     if region_state and region_state.subsidy_tokens_remaining > 0:
@@ -210,7 +240,7 @@ def scale_presence(db: Session, player_id: int, target_region: int):
         "new_region": target_region,
         "subsidy_claimed": claimed,
         "new_total_subsidies": player.subsidy_tokens,
-        "new_income": player.income
+        "new_income": player.income,
     }
 
 
@@ -247,7 +277,7 @@ def increase_net_worth(db: Session, player_id: int):
         "action": "net_worth_increased",
         "new_level": player.net_worth_level,
         "new_reputation": player.reputation,
-        "new_income": player.income
+        "new_income": player.income,
     }
 
 
@@ -277,7 +307,7 @@ def recruit_worker(db: Session, player_id: int, target_action: str):
         game_id=player.game_id,
         player_id=player_id,
         worker_number=next_worker_num,
-        action_type=target_action
+        action_type=target_action,
     )
     db.add(new_placement)
     db.commit()
@@ -286,7 +316,7 @@ def recruit_worker(db: Session, player_id: int, target_action: str):
         "action": "worker_recruited",
         "new_total": player.total_workers,
         "placed_on": target_action,
-        "remaining_funds": player.corporate_funds
+        "remaining_funds": player.corporate_funds,
     }
 
 
@@ -308,7 +338,7 @@ def execute_marketing(db: Session, player_id: int):
         "action": "marketing_resolved",
         "new_reputation": player.reputation,
         "new_power": player.power,
-        "new_income": player.income
+        "new_income": player.income,
     }
 
 
@@ -346,11 +376,13 @@ def execute_raise_funds_sequence(db: Session, player_id: int, chunks: list[int])
         income_to_draw = min(player.income, cap)
         player.corporate_funds = income_to_draw
 
-        summary.append({
-            "workers_in_chunk": worker_count,
-            "siphoned": amount_siphoned,
-            "drawn": income_to_draw
-        })
+        summary.append(
+            {
+                "workers_in_chunk": worker_count,
+                "siphoned": amount_siphoned,
+                "drawn": income_to_draw,
+            }
+        )
 
     db.commit()
     return {
@@ -358,7 +390,7 @@ def execute_raise_funds_sequence(db: Session, player_id: int, chunks: list[int])
         "player_id": player_id,
         "sequence_results": summary,
         "final_corporate": player.corporate_funds,
-        "final_personal": player.personal_funds
+        "final_personal": player.personal_funds,
     }
 
 
@@ -381,11 +413,15 @@ def place_worker(db: Session, player_id: int, worker_number: int, action_type: s
         return {"error": f"Player only has {player.total_workers} workers."}
 
     # 2. Upsert: Update if exists, otherwise create
-    placement = db.query(WorkerPlacement).filter(
-        WorkerPlacement.player_id == player_id,
-        WorkerPlacement.worker_number == worker_number,
-        WorkerPlacement.game_id == player.game_id
-    ).first()
+    placement = (
+        db.query(WorkerPlacement)
+        .filter(
+            WorkerPlacement.player_id == player_id,
+            WorkerPlacement.worker_number == worker_number,
+            WorkerPlacement.game_id == player.game_id,
+        )
+        .first()
+    )
 
     if placement:
         placement.action_type = action_type
@@ -394,15 +430,21 @@ def place_worker(db: Session, player_id: int, worker_number: int, action_type: s
             game_id=player.game_id,
             player_id=player_id,
             worker_number=worker_number,
-            action_type=action_type
+            action_type=action_type,
         )
         db.add(placement)
 
     db.commit()
-    return {"action": "worker_placed", "worker_number": worker_number, "slot": action_type}
+    return {
+        "action": "worker_placed",
+        "worker_number": worker_number,
+        "slot": action_type,
+    }
 
 
-def execute_action(db: Session, player_id: int, action_type: str, worker_count: int = 1):
+def execute_action(
+    db: Session, player_id: int, action_type: str, worker_count: int = 1
+):
     """
     The central hub for routing worker actions to their specific logic.
     worker_count: The number of workers assigned to this specific action slot.
@@ -448,20 +490,29 @@ def resolve_entire_round(db: Session, game_id: int):
         resolved_worker_numbers = set()
 
         while True:
-            p = db.query(WorkerPlacement).filter(
-                WorkerPlacement.player_id == player.id,
-                WorkerPlacement.worker_number.notin_(resolved_worker_numbers)
-            ).order_by(WorkerPlacement.worker_number.asc()).first()
+            p = (
+                db.query(WorkerPlacement)
+                .filter(
+                    WorkerPlacement.player_id == player.id,
+                    WorkerPlacement.worker_number.notin_(resolved_worker_numbers),
+                )
+                .order_by(WorkerPlacement.worker_number.asc())
+                .first()
+            )
 
             if not p:
                 break
 
             # CORRECTED: Only group workers with the SAME worker_number
             # (In case the UI/Rules allow stacking multiple workers on beat #1)
-            worker_group = db.query(WorkerPlacement).filter(
-                WorkerPlacement.player_id == player.id,
-                WorkerPlacement.worker_number == p.worker_number
-            ).all()
+            worker_group = (
+                db.query(WorkerPlacement)
+                .filter(
+                    WorkerPlacement.player_id == player.id,
+                    WorkerPlacement.worker_number == p.worker_number,
+                )
+                .all()
+            )
 
             # Dispatch the action for this specific worker number/beat
             execute_action(db, player.id, p.action_type, len(worker_group))

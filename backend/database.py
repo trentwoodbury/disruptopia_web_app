@@ -18,6 +18,7 @@ engine = create_engine(
 # This allows us to create 'instances' of database connections
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 
+
 def init_db():
     """
     This function creates the tables in the SQLite file.
@@ -26,6 +27,7 @@ def init_db():
     print("Initializing the Disruptopia database...")
     Base.metadata.create_all(bind=engine)
     print("Tables created successfully!")
+
 
 if __name__ == "__main__":
     init_db()

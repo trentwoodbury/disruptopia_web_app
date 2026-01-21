@@ -1,10 +1,27 @@
 import pytest
 from backend.database import SessionLocal, engine
-from backend.models import Base, Component, Player, Game, WorkerPlacement, Presence, RegionState
+from backend.models import (
+    Base,
+    Component,
+    Player,
+    Game,
+    WorkerPlacement,
+    Presence,
+    RegionState,
+)
 from backend.game_engine import (
-    draw_card, play_card, execute_raise_funds_sequence,
-    place_worker, resolve_entire_round, buy_chips, train_model, scale_presence, increase_net_worth,
-    update_player_income, recruit_worker, execute_action
+    draw_card,
+    play_card,
+    execute_raise_funds_sequence,
+    place_worker,
+    resolve_entire_round,
+    buy_chips,
+    train_model,
+    scale_presence,
+    increase_net_worth,
+    update_player_income,
+    recruit_worker,
+    execute_action,
 )
 from backend.enums import ZoneType
 from backend.seed import seed_initial_game
@@ -36,13 +53,16 @@ def test_starting_resource_values(db_session):
     assert player.compute_level == 1
     assert player.model_version == 0
 
+
 def test_draw_research_card(db_session):
     player_id = 1
     result = draw_card(db_session, player_id, ZoneType.RESEARCH_DECK)
 
     assert "error" not in result
     drawn_card_id = result["component_id"]
-    updated_card = db_session.query(Component).filter(Component.id == drawn_card_id).first()
+    updated_card = (
+        db_session.query(Component).filter(Component.id == drawn_card_id).first()
+    )
 
     assert updated_card.zone == "hand_p1"
     assert updated_card.owner_id == player_id
@@ -94,7 +114,7 @@ def test_resolution_turn_order(db_session):
     players = [
         Player(user_name="Alpha", player_order=0, game_id=game.id, total_workers=3),
         Player(user_name="Bravo", player_order=1, game_id=game.id, total_workers=3),
-        Player(user_name="Charlie", player_order=2, game_id=game.id, total_workers=3)
+        Player(user_name="Charlie", player_order=2, game_id=game.id, total_workers=3),
     ]
     db_session.add_all(players)
     db_session.commit()

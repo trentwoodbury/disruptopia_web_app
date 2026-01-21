@@ -2,8 +2,10 @@ from typing import List, Optional
 from sqlalchemy import ForeignKey, String, Integer, Boolean, Float
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, relationship
 
+
 class Base(DeclarativeBase):
     pass
+
 
 class Game(Base):
     __tablename__ = "games"
@@ -16,6 +18,7 @@ class Game(Base):
     # Relationships
     players: Mapped[List["Player"]] = relationship(back_populates="game")
     components: Mapped[List["Component"]] = relationship(back_populates="game")
+
 
 class Player(Base):
     __tablename__ = "players"
@@ -36,7 +39,9 @@ class Player(Base):
     net_worth_level: Mapped[int] = mapped_column(Integer, default=0)
     compute_level: Mapped[int] = mapped_column(Integer, default=1)
     model_version: Mapped[int] = mapped_column(Integer, default=1)  # Range 1 to 7
-    presence_count: Mapped[int] = mapped_column(Integer, default=1)  # Number of Regions with presence
+    presence_count: Mapped[int] = mapped_column(
+        Integer, default=1
+    )  # Number of Regions with presence
 
     # --- Tech Workers ---
     total_workers: Mapped[int] = mapped_column(Integer, default=3)  # Starts at 3, max 8
@@ -51,30 +56,45 @@ class Player(Base):
     # Link to components owned (like Presence Tokens or Cards)
     components: Mapped[List["Component"]] = relationship()
 
+
 class CardDetails(Base):
     __tablename__ = "card_details"
     id: Mapped[int] = mapped_column(primary_key=True)
     name: Mapped[str] = mapped_column(String(100), unique=True)
-    is_effect: Mapped[bool] = mapped_column(Boolean, default=False) #  True = Effect Card. False = Action Card.
-    qty: Mapped[str] = mapped_column(String(20))  # How many of this card are there in the deck?
-    cost: Mapped[int] = mapped_column(Integer)  # How many tech workers must be used to play this card
-    deck: Mapped[str] = mapped_column(String(50))  # One of the CardCategory Enum values.
+    is_effect: Mapped[bool] = mapped_column(
+        Boolean, default=False
+    )  #  True = Effect Card. False = Action Card.
+    qty: Mapped[str] = mapped_column(
+        String(20)
+    )  # How many of this card are there in the deck?
+    cost: Mapped[int] = mapped_column(
+        Integer
+    )  # How many tech workers must be used to play this card
+    deck: Mapped[str] = mapped_column(
+        String(50)
+    )  # One of the CardCategory Enum values.
+
 
 class Component(Base):
     """
     Represents any physical object: Cards, Tokens, or Board Pieces.
     """
+
     __tablename__ = "components"
 
     id: Mapped[int] = mapped_column(primary_key=True)
     game_id: Mapped[int] = mapped_column(ForeignKey("games.id"))
-    card_details_id: Mapped[Optional[int]] = mapped_column(ForeignKey("card_details.id"))
+    card_details_id: Mapped[Optional[int]] = mapped_column(
+        ForeignKey("card_details.id")
+    )
     card_details: Mapped[Optional["CardDetails"]] = relationship()
 
     # Metadata
     name: Mapped[str] = mapped_column(String(100))  # e.g., "Policy_Card_01"
     comp_type: Mapped[str] = mapped_column(String(20))  # "card", "token", "meeple"
-    sub_type: Mapped[Optional[str]] = mapped_column(String(50))  # e.g., "RESEARCH", "INFLUENCE"
+    sub_type: Mapped[Optional[str]] = mapped_column(
+        String(50)
+    )  # e.g., "RESEARCH", "INFLUENCE"
 
     # State & Location
     # 'zone' defines where it is (e.g., 'BOARD', 'DECK', 'HAND_PLAYER_1')
@@ -90,6 +110,7 @@ class Component(Base):
 
     game: Mapped["Game"] = relationship(back_populates="components")
 
+
 class WorkerPlacement(Base):
     __tablename__ = "worker_placements"
 
@@ -103,20 +124,23 @@ class WorkerPlacement(Base):
 
     player: Mapped["Player"] = relationship()
 
+
 class Presence(Base):
     __tablename__ = "presence"
 
     id: Mapped[int] = mapped_column(primary_key=True)
     player_id: Mapped[int] = mapped_column(ForeignKey("players.id"))
-    region_id: Mapped[int] = mapped_column(Integer) # 1 through 10
+    region_id: Mapped[int] = mapped_column(Integer)  # 1 through 10
+
 
 class RegionState(Base):
     __tablename__ = "region_states"
 
     id: Mapped[int] = mapped_column(primary_key=True)
     game_id: Mapped[int] = mapped_column(ForeignKey("games.id"))
-    region_id: Mapped[int] = mapped_column(Integer) # 1-10
+    region_id: Mapped[int] = mapped_column(Integer)  # 1-10
     subsidy_tokens_remaining: Mapped[int] = mapped_column(Integer)
+
 
 class ReputationTile(Base):
     __tablename__ = "reputation_tiles"
@@ -124,6 +148,10 @@ class ReputationTile(Base):
     id: Mapped[int] = mapped_column(primary_key=True)
     game_id: Mapped[int] = mapped_column(ForeignKey("games.id"))
     level: Mapped[int] = mapped_column(Integer)  # 0, 1, 2, or 3
-    name: Mapped[str] = mapped_column(String(50)) # e.g., "Tax Haven" or "Public Darling"
+    name: Mapped[str] = mapped_column(
+        String(50)
+    )  # e.g., "Tax Haven" or "Public Darling"
     owner_id: Mapped[int] = mapped_column(ForeignKey("players.id"), nullable=True)
-    effect_code: Mapped[str] = mapped_column(String(50)) # Internal ID for the bonus logic
+    effect_code: Mapped[str] = mapped_column(
+        String(50)
+    )  # Internal ID for the bonus logic

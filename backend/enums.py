@@ -1,5 +1,6 @@
 import enum
 
+
 class ZoneType(str, enum.Enum):
     ACTIVE_EFFECT_CARD_SLOT_1_P1 = "active_effect_card_slot_1_p1"
     ACTIVE_EFFECT_CARD_SLOT_2_P1 = "active_effect_card_slot_2_p1"
@@ -36,8 +37,10 @@ class ZoneType(str, enum.Enum):
 
     BOARD = "board"
 
+
 class ComponentType(str, enum.Enum):
     CARD = "card"
+
 
 class CardCategory(str, enum.Enum):
     RESEARCH = "research"
