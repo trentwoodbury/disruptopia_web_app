@@ -126,6 +126,25 @@ def check_reputation_tiles(db: Session, player_id: int):
     db.commit()
 
 
+def apply_card_effect(db: Session, player_id: int, card_id: int):
+    """
+    Identifies the card's effect slug and executes the corresponding logic.
+    """
+    # Local import to break circular dependency
+    from backend.card_effects import CARD_EFFECT_REGISTRY
+
+    card = db.get(Component, card_id)
+    if not card:
+        return {"error": "Card not found."}
+
+    effect_slug = card.card_details.effect_slug
+
+    if effect_slug in CARD_EFFECT_REGISTRY:
+        return CARD_EFFECT_REGISTRY[effect_slug](db, player_id, card_id)
+
+    return {"error": f"No logic implemented for effect: {effect_slug}"}
+
+
 # ==========================================
 # 2. QUARTERLY STRATEGY ACTIONS
 # ==========================================

@@ -1,8 +1,16 @@
 import random
 
-from backend.config import REPUTATION_TILE_POOL
+from backend.config import REPUTATION_TILE_POOL, CARD_LIBRARY
 from backend.database import SessionLocal, engine
-from backend.models import Base, Game, Player, Component, CardDetails, RegionState, ReputationTile
+from backend.models import (
+    Base,
+    Game,
+    Player,
+    Component,
+    CardDetails,
+    RegionState,
+    ReputationTile,
+)
 from backend.enums import ZoneType, ComponentType, CardCategory
 
 
@@ -31,7 +39,7 @@ def seed_reputation_tiles(db, game_id, player_count):
                     game_id=game_id,
                     level=0,
                     name=t_data["name"],
-                    effect_code=t_data["effect"]
+                    effect_code=t_data["effect"],
                 )
                 db.add(new_tile)
         else:
@@ -42,7 +50,7 @@ def seed_reputation_tiles(db, game_id, player_count):
                     game_id=game_id,
                     level=level,
                     name=t_data["name"],
-                    effect_code=t_data["effect"]
+                    effect_code=t_data["effect"],
                 )
                 db.add(new_tile)
 
@@ -97,27 +105,8 @@ def seed_initial_game():
         seed_regions(db, new_game.id, player_count)
         seed_reputation_tiles(db, new_game.id, 2)
 
-        # 2. Define the Card Library (Definitions)
-        # TODO: move to a separate JSON file.
-        card_library = [
-            {
-                "name": "good_ol_corporate_espionage",
-                "is_effect": True,
-                "qty": 5,
-                "cost": 2,
-                "deck": CardCategory.INFLUENCE.value,
-            },
-            {
-                "name": "unethical_data_source",
-                "is_effect": False,
-                "qty": 10,
-                "cost": 1,
-                "deck": CardCategory.RESEARCH.value,
-            },
-        ]
-
         # 3. Create Definitions and physical Components
-        for data in card_library:
+        for data in CARD_LIBRARY:
             # Create the shared definition
             detail = CardDetails(
                 name=data["name"],
@@ -125,6 +114,7 @@ def seed_initial_game():
                 qty=str(data["qty"]),  # Matching your String(20) model
                 cost=data["cost"],
                 deck=data["deck"],
+                effect_slug=data.get("effect_slug"),
             )
             db.add(detail)
             db.flush()  # Get detail.id without committing yet

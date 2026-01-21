@@ -73,6 +73,7 @@ class CardDetails(Base):
     deck: Mapped[str] = mapped_column(
         String(50)
     )  # One of the CardCategory Enum values.
+    effect_slug: Mapped[str] = mapped_column(String(50), nullable=True)
 
 
 class Component(Base):

@@ -1,4 +1,6 @@
 # Compute Level costs and requirements
+from backend.enums import CardCategory
+
 COMPUTE_UPGRADE_COSTS = {2: 2, 3: 3, 4: 4, 5: 5, 6: 6, 7: 7}
 # 0 = Startup, 1 = Millionaire, 2 = Billionaire
 COMPUTE_NET_WORTH_REQ = {
@@ -69,24 +71,60 @@ REPUTATION_TILE_POOL = {
         {"name": "Legacy Tax", "effect": "compute_cost_plus_3"},
         {"name": "Information Leak", "effect": "discard_per_round"},
         {"name": "Security Audit", "effect": "hand_limit_3"},
-        {"name": "Power Drain", "effect": "lose_2_power_round"}
+        {"name": "Power Drain", "effect": "lose_2_power_round"},
     ],
     1: [
         {"name": "Subsidy Bonus", "effect": "income_plus_1"},
         {"name": "Rapid Intel", "effect": "draw_extra_card"},
         {"name": "Expanded Library", "effect": "hand_limit_6"},
-        {"name": "Hardware Discount", "effect": "compute_minus_1"}
+        {"name": "Hardware Discount", "effect": "compute_minus_1"},
     ],
     2: [
         {"name": "Market Leader", "effect": "income_plus_2"},
         {"name": "Cloud Partnership", "effect": "compute_minus_2"},
         {"name": "Streamlined Ops", "effect": "play_card_worker_minus_1"},
-        {"name": "Optimized Training", "effect": "model_worker_minus_1"}
+        {"name": "Optimized Training", "effect": "model_worker_minus_1"},
     ],
     3: [
         {"name": "Venture Mogul", "effect": "free_hand_card"},
         {"name": "Board Chairman", "effect": "perma_p1"},
         {"name": "Infinite Loop", "effect": "free_active_effect"},
-        {"name": "Automated Finance", "effect": "one_worker_income"}
-    ]
+        {"name": "Automated Finance", "effect": "one_worker_income"},
+    ],
 }
+
+# Assuming CardCategory is already imported or defined in your config
+CARD_LIBRARY = [
+    {
+        "name": "good_ol_corporate_espionage",
+        "is_effect": True,
+        "qty": 5,
+        "cost": 2,
+        "deck": CardCategory.INFLUENCE.value,
+        "effect_slug": "corporate_espionage",
+    },
+    {
+        "name": "unethical_data_source",
+        "is_effect": False,
+        "qty": 10,
+        "cost": 1,
+        "deck": CardCategory.RESEARCH.value,
+        "effect_slug": "unethical_data",
+    },
+    {
+        "name": "some_nerdy_server_optimization_thing",
+        "is_effect": False,
+        "qty": 5,
+        "cost": 1,
+        "deck": CardCategory.RESEARCH.value,
+        "effect_slug": "nerdy_server_optimization",
+    },
+    {
+        "name": "hire_a_lobbyist",
+        "is_effect": False,
+        "qty": 5,
+        "cost": 1,
+        "deck": CardCategory.INFLUENCE.value,
+        "effect_slug": "hire_a_lobbyist",
+    },
+]
