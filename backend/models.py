@@ -28,7 +28,29 @@ class Player(Base):
     player_order: Mapped[int] = mapped_column(Integer)  # 0 to 4
     is_online: Mapped[bool] = mapped_column(Boolean, default=True)
 
+    # --- Resources ---
+    corporate_funds: Mapped[int] = mapped_column(Integer, default=0)
+    personal_funds: Mapped[int] = mapped_column(Integer, default=0)
+    reputation: Mapped[int] = mapped_column(Integer, default=0)  # Range -3 to 10
+
+    # --- Levels ---
+    # Net Worth: 0 = Startup, 1 = Millionaire, 2 = Billionaire
+    net_worth_level: Mapped[int] = mapped_column(Integer, default=0)
+    compute_level: Mapped[int] = mapped_column(Integer, default=1)
+    model_version: Mapped[int] = mapped_column(Integer, default=1)  # Range 1 to 7
+
+    # --- Tech Workers ---
+    total_workers: Mapped[int] = mapped_column(Integer, default=3)  # Starts at 3, max 8
+
+    # --- Stats (Calculated & Stored for UI) ---
+    power: Mapped[int] = mapped_column(Integer, default=0)
+    subsidy_tokens: Mapped[int] = mapped_column(Integer, default=0)
+    income: Mapped[int] = mapped_column(Integer, default=0)  # Power + Subsidies
+
+    # Relationships
     game: Mapped["Game"] = relationship(back_populates="players")
+    # Link to components owned (like Presence Tokens or Cards)
+    components: Mapped[List["Component"]] = relationship()
 
 
 class CardDetails(Base):
