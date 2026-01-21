@@ -7,7 +7,7 @@ from backend.models import (
     Game,
     WorkerPlacement,
     Presence,
-    RegionState,
+    RegionState, ReputationTile,
 )
 from backend.game_engine import (
     draw_card,
@@ -21,7 +21,7 @@ from backend.game_engine import (
     increase_net_worth,
     update_player_income,
     recruit_worker,
-    execute_action,
+    execute_action, execute_marketing, check_reputation_tiles,
 )
 from backend.enums import ZoneType
 from backend.seed import seed_initial_game
@@ -167,14 +167,14 @@ def test_train_model_logic(db_session):
     db_session.commit()
 
     # 1. Test Fail: Compute Gate
-    result = train_model(db_session, player.id)
+    result = train_model(db_session, player.id, worker_count=2)
     assert "error" in result
     assert "Insufficient Compute" in result["error"]
 
     # 2. Test Fail: Net Worth Gate (Millionaire required for V3)
     player.compute_level = 3
     db_session.commit()
-    result = train_model(db_session, player.id)
+    result = train_model(db_session, player.id, worker_count=2)
     assert "error" in result
     assert "Net Worth too low" in result["error"]
 
@@ -182,7 +182,7 @@ def test_train_model_logic(db_session):
     player.net_worth_level = 1  # Millionaire
     db_session.commit()
 
-    result = train_model(db_session, player.id)
+    result = train_model(db_session, player.id, worker_count=2)
 
     assert result["new_version"] == 3
     assert result["new_power"] == 12
@@ -227,7 +227,7 @@ def test_net_worth_upgrade_and_income_boost(db_session):
     player.subsidy_tokens = 5
     player.power = 0
     # Startup Income = 0 + (5 * 0) = 0
-    update_player_income(player)
+    update_player_income(db_session, player)
     db_session.commit()
 
     # Action: Become Millionaire (Costs $3, 2 Rep)
@@ -311,3 +311,82 @@ def test_train_model_accumulation_scenarios(db_session):
     for count in strategy_2:
         train_model(db_session, player.id, count)
     assert player.model_version == 6
+
+
+def test_marketing_per_net_worth(db_session):
+    player = db_session.get(Player, 1)
+
+    # --- Scenario 1: Startup (NW 0) ---
+    # Setup: Startup with 0 Rep, 3 Power
+    player.net_worth_level = 0
+    player.reputation = 0
+    player.power = 3
+    db_session.commit()
+
+    execute_marketing(db_session, player.id)
+    assert player.reputation == 3  # Gains 3 Rep
+    assert player.power == 3  # Gains 0 Power
+
+    # --- Scenario 2: Millionaire (NW 1) ---
+    # Setup: Millionaire with 5 Rep, 10 Power
+    player.net_worth_level = 1
+    player.reputation = 5
+    player.power = 10
+    db_session.commit()
+
+    execute_marketing(db_session, player.id)
+    assert player.reputation == 6  # Gains 1 Rep
+    assert player.power == 11  # Gains 1 Power
+
+    # --- Scenario 3: Billionaire (NW 2) Caps ---
+    # Setup: Billionaire near caps (9 Rep, 39 Power)
+    player.net_worth_level = 2
+    player.reputation = 9
+    player.power = 39
+    db_session.commit()
+
+    # Marketing as Billionaire grants 0 Rep, 2 Power
+    execute_marketing(db_session, player.id)
+    assert player.reputation == 9  # Stays at 9 (0 gain)
+    assert player.power == 40  # Capped at 40 (instead of 41)
+
+
+def test_reputation_tile_stealing_and_eligibility(db_session):
+    game = db_session.query(Game).first()
+    player_a = db_session.get(Player, 1)
+    player_b = db_session.get(Player, 2)
+
+    # --- Scenario 1: Millionaire Eligibility ---
+    # Player A is at Rep 6 but is a STARTUP. Should NOT get Level 2 tile.
+    player_a.reputation = 6
+    player_a.net_worth_level = 0
+    db_session.commit()
+    check_reputation_tiles(db_session, player_a.id)
+
+    tile_l2 = db_session.query(ReputationTile).filter_by(level=2).first()
+    assert tile_l2.owner_id is None  # Not eligible
+
+    # Now make Player A a Millionaire
+    player_a.net_worth_level = 1
+    db_session.commit()
+    check_reputation_tiles(db_session, player_a.id)
+    assert tile_l2.owner_id == player_a.id  # Takes it!
+
+    # --- Scenario 2: Stealing ---
+    # Player B becomes a Millionaire and hits Rep 7
+    player_b.net_worth_level = 1
+    player_b.reputation = 7
+    db_session.commit()
+    check_reputation_tiles(db_session, player_b.id)
+
+    # Refresh tile and check owner
+    db_session.refresh(tile_l2)
+    assert tile_l2.owner_id == player_b.id  # Player B stole it
+
+    # --- Scenario 3: Penalty Assignment ---
+    player_a.reputation = -3
+    db_session.commit()
+    check_reputation_tiles(db_session, player_a.id)
+
+    penalty_tile = db_session.query(ReputationTile).filter_by(level=0, owner_id=player_a.id).first()
+    assert penalty_tile is not None  # Player A is now penalized. Poor Player A.

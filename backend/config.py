@@ -62,3 +62,31 @@ MARKETING_BONUSES = {
     1: {"reputation": 1, "power": 1},
     2: {"reputation": 0, "power": 2},
 }
+
+REPUTATION_TILE_POOL = {
+    0: [
+        {"name": "Inefficient R&D", "effect": "model_cost_plus_1"},
+        {"name": "Legacy Tax", "effect": "compute_cost_plus_3"},
+        {"name": "Information Leak", "effect": "discard_per_round"},
+        {"name": "Security Audit", "effect": "hand_limit_3"},
+        {"name": "Power Drain", "effect": "lose_2_power_round"}
+    ],
+    1: [
+        {"name": "Subsidy Bonus", "effect": "income_plus_1"},
+        {"name": "Rapid Intel", "effect": "draw_extra_card"},
+        {"name": "Expanded Library", "effect": "hand_limit_6"},
+        {"name": "Hardware Discount", "effect": "compute_minus_1"}
+    ],
+    2: [
+        {"name": "Market Leader", "effect": "income_plus_2"},
+        {"name": "Cloud Partnership", "effect": "compute_minus_2"},
+        {"name": "Streamlined Ops", "effect": "play_card_worker_minus_1"},
+        {"name": "Optimized Training", "effect": "model_worker_minus_1"}
+    ],
+    3: [
+        {"name": "Venture Mogul", "effect": "free_hand_card"},
+        {"name": "Board Chairman", "effect": "perma_p1"},
+        {"name": "Infinite Loop", "effect": "free_active_effect"},
+        {"name": "Automated Finance", "effect": "one_worker_income"}
+    ]
+}

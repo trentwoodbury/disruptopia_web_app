@@ -18,7 +18,7 @@ from backend.models import (
     WorkerPlacement,
     Game,
     Presence,
-    RegionState,
+    RegionState, ReputationTile,
 )
 from backend.seed import ZoneType
 
@@ -123,16 +123,18 @@ def play_card(db: Session, player_id: int, card_id: int, target_slot: int = None
 def buy_chips(db: Session, player_id: int):
     player = db.get(Player, player_id)
     next_level = player.compute_level + 1
+    mods = get_player_modifiers(db, player_id)
 
     # 1. Check if already at max level
     if next_level > 7:
         return {"error": "Maximum compute level already reached."}
 
     # 2. Check Corporate Funds
-    cost = COMPUTE_UPGRADE_COSTS.get(next_level)
-    if player.corporate_funds < cost:
+    base_cost = COMPUTE_UPGRADE_COSTS.get(next_level)
+    final_cost = max(0, base_cost + mods["compute_cost_offset"])
+    if player.corporate_funds < final_cost:
         return {
-            "error": f"Insufficient funds. Need ${cost}, have ${player.corporate_funds}."
+            "error": f"Insufficient funds. Need ${final_cost}, have ${player.corporate_funds}."
         }
 
     # 3. Check Net Worth Gate
@@ -142,7 +144,7 @@ def buy_chips(db: Session, player_id: int):
         return {"error": f"Net Worth too low. Upgrade to {nw_name} first."}
 
     # 4. Execute Upgrade
-    player.corporate_funds -= cost
+    player.corporate_funds -= final_cost
     player.compute_level = next_level
     db.commit()
 
@@ -155,11 +157,21 @@ def buy_chips(db: Session, player_id: int):
 
 def train_model(db: Session, player_id: int, worker_count: int = 1):
     player = db.get(Player, player_id)
+    mods = get_player_modifiers(db, player_id)  # Fetch mods
 
-    # 1. INITIAL GATE CHECKS (Preserves your error-dependent tests)
     next_version = player.model_version + 1
     if next_version > 7:
         return {"error": "Maximum Model Version reached."}
+
+    # --- TILE MODIFIED GATE ---
+    base_req = MODEL_WORKER_COSTS.get(next_version, 1)
+    # Apply offset (e.g., 2 workers - 1 from tile = 1 required)
+    # Minimum of 1 worker is always required
+    final_worker_req = max(1, base_req + mods["model_worker_cost_offset"])
+
+    if worker_count < final_worker_req:
+        return {"error": f"Insufficient Tech Workers. Need {final_worker_req} for this upgrade."}
+    # --------------------------
 
     if player.compute_level < next_version:
         return {"error": f"Insufficient Compute Level. Need {next_version}."}
@@ -168,16 +180,18 @@ def train_model(db: Session, player_id: int, worker_count: int = 1):
     if player.net_worth_level < required_nw:
         return {"error": "Net Worth too low for this Model Version."}
 
-    # 2. ACCUMULATE PROGRESS
+    # Execution phase
     player.model_version = next_version
     player.reputation = min(10, player.reputation + 1)
+
     power_upgrade = player.presence_count // 2
     player.power = min(40, player.power + power_upgrade)
-    update_player_income(player)
+
+    # Pass db session to the updated income function
+    update_player_income(db, player)
 
     db.commit()
 
-    # Return structure satisfies both the logic tests and the scenario tests
     return {
         "action": "model_trained",
         "new_version": player.model_version,
@@ -232,7 +246,7 @@ def scale_presence(db: Session, player_id: int, target_region: int):
         player.subsidy_tokens += 1
         claimed = True
         # Update income because subsidy count changed
-        update_player_income(player)
+        update_player_income(db, player)
 
     db.commit()
     return {
@@ -270,7 +284,7 @@ def increase_net_worth(db: Session, player_id: int):
     # TODO: add handling for VP tokens.
 
     # Update Income (Subsidies are worth more now)
-    update_player_income(player)
+    update_player_income(db, player)
 
     db.commit()
     return {
@@ -327,11 +341,11 @@ def execute_marketing(db: Session, player_id: int):
     # Apply Reputation (Capped at 10)
     player.reputation = min(10, player.reputation + bonus["reputation"])
 
-    # Apply Power (Capped at 40 per your earlier update)
+    # Apply Power (Capped at 40)
     player.power = min(40, player.power + bonus["power"])
 
     # Income might change if power increased
-    update_player_income(player)
+    update_player_income(db, player)
 
     db.commit()
     return {
@@ -394,13 +408,18 @@ def execute_raise_funds_sequence(db: Session, player_id: int, chunks: list[int])
     }
 
 
-def update_player_income(player: Player):
-    # Net Worth Multipliers: Startup=0, Millionaire=1, Billionaire=2
+def update_player_income(db: Session, player: Player):
+    # 1. Fetch active modifiers
+    mods = get_player_modifiers(db, player.id)
+
+    # 2. Base Calculation: Power + (Subsidies * Multiplier)
     multiplier = player.net_worth_level
+    base_income = player.power + (player.subsidy_tokens * multiplier)
 
-    player.income = player.power + (player.subsidy_tokens * multiplier)
+    # 3. Apply Tile Bonus (+$1 or +$2)
+    player.income = base_income + mods["income_offset"]
 
-    # Income caps at $39. Any additional income is used up in antitrust lawsuits with the EU.
+    # 4. Global Cap
     if player.income > 39:
         player.income = 39
 
@@ -479,6 +498,97 @@ def get_sorted_players(players: list[Player], p1_index: int) -> list[Player]:
     players_by_order = sorted(players, key=lambda x: x.player_order)
 
     return [players_by_order[(p1_index + i) % num_players] for i in range(num_players)]
+
+
+def check_reputation_tiles(db: Session, player_id: int):
+    player = db.get(Player, player_id)
+    game_id = player.game_id
+
+    # 1. Level 0 Check: The "Penalty" state
+    # If -3, they take an unowned Level 0 tile.
+    # If they move above -3, they lose it.
+    current_penalty = db.query(ReputationTile).filter_by(owner_id=player.id, level=0).first()
+    if player.reputation == -3 and not current_penalty:
+        available_penalty = db.query(ReputationTile).filter_by(game_id=game_id, level=0, owner_id=None).first()
+        if available_penalty:
+            available_penalty.owner_id = player.id
+    elif player.reputation > -3 and current_penalty:
+        current_penalty.owner_id = None
+
+    # 2. Level 1-3 Stealing/Eligibility Logic
+    for level in [1, 2, 3]:
+        # Check Net Worth Eligibility
+        if level == 2 and player.net_worth_level < 1: continue  # Must be Millionaire
+        if level == 3 and player.net_worth_level < 2: continue  # Must be Billionaire
+
+        # Check Rep Thresholds for NEW acquisition
+        min_rep = {1: 1, 2: 6, 3: 10}[level]
+        if player.reputation < min_rep: continue
+
+        # Find all tiles at this level in the current game
+        tiles = db.query(ReputationTile).filter_by(game_id=game_id, level=level).all()
+
+        for tile in tiles:
+            # If tile is unowned, take it
+            if tile.owner_id is None:
+                tile.owner_id = player.id
+                break  # Only take one tile of this level
+
+            # If tile is owned, can we steal it?
+            owner = db.get(Player, tile.owner_id)
+            if player.reputation > owner.reputation:
+                # Steal! (TODO: In 4-5 player games, we might need
+                # a 'choose which one' UI, but for now we take the first weaker one)
+                tile.owner_id = player.id
+                break
+
+    db.commit()
+
+
+def get_player_modifiers(db: Session, player_id: int):
+    """
+    Returns a dictionary of active buffs and penalties for the player.
+    Defaults to 0 or 1 (multiplier) so they can be added/multiplied safely.
+    """
+    # Default State
+    mods = {
+        "model_worker_cost_offset": 0,
+        "compute_cost_offset": 0,
+        "hand_limit": 5,
+        "income_offset": 0,
+        "draw_bonus": 0,
+        "worker_income_efficiency": False,  # For the Rep 3 tile
+        "free_card_play": False
+    }
+
+    # Fetch all tiles owned by this player
+    tiles = db.query(ReputationTile).filter_by(owner_id=player_id).all()
+
+    for tile in tiles:
+        code = tile.effect_code
+
+        # Level 0 & 2 Model Costs
+        if code == "model_cost_plus_1": mods["model_worker_cost_offset"] += 1
+        if code == "model_worker_minus_1": mods["model_worker_cost_offset"] -= 1
+
+        # Compute Costs
+        if code == "compute_cost_plus_3": mods["compute_cost_offset"] += 3
+        if code == "compute_minus_1": mods["compute_cost_offset"] -= 1
+        if code == "compute_minus_2": mods["compute_cost_offset"] -= 2
+
+        # Hand Limits (The lowest limit takes precedence for penalties)
+        if code == "hand_limit_3": mods["hand_limit"] = min(mods["hand_limit"], 3)
+        if code == "hand_limit_6": mods["hand_limit"] = 6
+
+        # Income
+        if code == "income_plus_1": mods["income_offset"] += 1
+        if code == "income_plus_2": mods["income_offset"] += 2
+
+        # Special Mechanics
+        if code == "one_worker_income": mods["worker_income_efficiency"] = True
+        if code == "draw_extra_card": mods["draw_bonus"] += 1
+
+    return mods
 
 
 def resolve_entire_round(db: Session, game_id: int):
