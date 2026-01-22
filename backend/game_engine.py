@@ -23,7 +23,7 @@ from backend.models import (
 from backend.seed import ZoneType
 
 # ==========================================
-# 1. CORE UTILITIES & STATE HELPERS
+# 1. CORE UTILITIES & HELPERS
 # ==========================================
 
 
@@ -145,6 +145,83 @@ def apply_card_effect(db: Session, player_id: int, card_id: int):
     return {"error": f"No logic implemented for effect: {effect_slug}"}
 
 
+def calculate_nw_vp(rank: int, player_count: int) -> int:
+    """Helper to determine Net Worth VP Bonus based on player count."""
+    if player_count == 2:
+        return 1 if rank == 1 else 0
+
+    if player_count == 3:
+        if rank == 1:
+            return 2
+        if rank == 2:
+            return 1
+        return 0
+
+    if player_count >= 4:
+        if rank == 1:
+            return 2
+        if rank in [2, 3]:
+            return 1
+        return 0
+
+    return 0
+
+
+def calculate_game_leaderboard(db: Session, game_id: int):
+    """
+    Calculates total VP for all players in a game, including
+    competitive ranking bonuses (Personal Funds).
+    """
+    players = db.query(Player).filter(Player.game_id == game_id).all()
+    player_count = len(players)
+
+    # 1. Rank players by Personal Funds for the cash bonus
+    # Sort descending: highest funds first
+    sorted_by_funds = sorted(players, key=lambda p: p.personal_funds, reverse=True)
+
+    fund_bonuses = {}
+    if player_count == 2:
+        fund_bonuses[sorted_by_funds[0].id] = 3
+    elif player_count == 3:
+        fund_bonuses[sorted_by_funds[0].id] = 3
+        fund_bonuses[sorted_by_funds[1].id] = 1
+    elif player_count >= 4:
+        fund_bonuses[sorted_by_funds[0].id] = 3
+        fund_bonuses[sorted_by_funds[1].id] = 2
+        fund_bonuses[sorted_by_funds[2].id] = 1
+
+    leaderboard = []
+    for player in players:
+        # Base VP from race bonuses (Millionaire/Billionaire first-to-finish)
+        total_vp = player.vp
+        # 1. 1VP for each 5 Power
+        total_vp += player.power // 5
+        # 2. 1VP for each Model Version
+        total_vp += player.model_version
+        # 3. 1VP per Region with Presence
+        total_vp += player.presence_count
+        # 4. Personal Funds Ranking Bonus
+        total_vp += fund_bonuses.get(player.id, 0)
+
+        leaderboard.append(
+            {
+                "player_id": player.id,
+                "user_name": player.user_name,
+                "total_vp": total_vp,
+                "breakdown": {
+                    "race_bonuses": player.vp,
+                    "power_vp": player.power // 5,
+                    "model_vp": player.model_version,
+                    "presence_vp": player.presence_count,
+                    "funds_bonus": fund_bonuses.get(player.id, 0),
+                },
+            }
+        )
+
+    # Sort leaderboard by total VP for display
+    return sorted(leaderboard, key=lambda x: x["total_vp"], reverse=True)
+
+
 # ==========================================
 # 2. QUARTERLY STRATEGY ACTIONS
 # ==========================================
@@ -262,27 +339,51 @@ def execute_scale_presence(db: Session, player_id: int, target_region: int):
 
 
 def execute_increase_net_worth(db: Session, player_id: int):
-    """Resolves the Increase Net Worth action."""
     player = db.get(Player, player_id)
+    game = db.get(Game, player.game_id)
     next_nw = player.net_worth_level + 1
 
     if next_nw > 2:
         return {"error": "Already a Billionaire."}
-    costs = NET_WORTH_COSTS[next_nw]
 
+    costs = NET_WORTH_COSTS[next_nw]
     if player.corporate_funds < costs["money"]:
         return {"error": f"Insufficient funds. Need ${costs['money']}."}
     if (player.reputation - costs["reputation"]) < -3:
         return {"error": "Reputation too low."}
 
+    # 1. Deduct costs and upgrade
     player.corporate_funds -= costs["money"]
     player.reputation -= costs["reputation"]
     player.net_worth_level = next_nw
 
+    # 2. Handle VP Bonuses
+    player_count = db.query(Player).filter(Player.game_id == game.id).count()
+    vp_reward = 0
+
+    if next_nw == 1:  # Becoming Millionaire
+        game.millionaire_count += 1
+        rank = game.millionaire_count
+        vp_reward = calculate_nw_vp(rank, player_count)
+
+    elif next_nw == 2:  # Becoming Billionaire
+        game.billionaire_count += 1
+        rank = game.billionaire_count
+        vp_reward = calculate_nw_vp(rank, player_count)
+
+    player.vp += vp_reward
+
+    # 3. State cleanup
     update_player_income(db, player)
     check_reputation_tiles(db, player_id)
     db.commit()
-    return {"action": "net_worth_increased", "new_level": player.net_worth_level}
+
+    return {
+        "action": "net_worth_increased",
+        "new_level": player.net_worth_level,
+        "vp_gained": vp_reward,
+        "total_vp": player.vp,
+    }
 
 
 def execute_recruit_worker(db: Session, player_id: int, target_action: str):
@@ -557,5 +658,10 @@ def resolve_entire_round(db: Session, game_id: int):
 
     game.p1_token_index = (game.p1_token_index + 1) % len(players)
     db.query(WorkerPlacement).filter_by(game_id=game_id).delete()
+    leaderboard = calculate_game_leaderboard(db, game_id)
     db.commit()
-    return {"action": "round_resolved", "new_p1_index": game.p1_token_index}
+    return {
+        "action": "round_resolved",
+        "new_p1_index": game.p1_token_index,
+        "leaderboard": leaderboard,
+    }

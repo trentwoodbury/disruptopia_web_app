@@ -10,6 +10,7 @@ from backend.models import (
     RegionState,
     ReputationTile,
 )
+
 # Updated imports to match new execute_ prefix and helper signatures
 from backend.game_engine import (
     draw_card,
@@ -25,6 +26,7 @@ from backend.game_engine import (
     execute_recruit_worker,
     execute_marketing,
     check_reputation_tiles,
+    calculate_game_leaderboard,
 )
 from backend.seed import ZoneType, seed_initial_game
 
@@ -60,7 +62,7 @@ def test_draw_research_card(db_session):
     result = draw_card(db_session, player_id, ZoneType.RESEARCH_DECK)
 
     assert "error" not in result
-    drawn_card_id = result["component_id"] # Returned as requested in refactor
+    drawn_card_id = result["component_id"]  # Returned as requested in refactor
     updated_card = (
         db_session.query(Component).filter(Component.id == drawn_card_id).first()
     )
@@ -320,5 +322,47 @@ def test_reputation_tile_stealing_and_eligibility(db_session):
     db_session.commit()
     check_reputation_tiles(db_session, player_a.id)
 
-    penalty_tile = db_session.query(ReputationTile).filter_by(level=0, owner_id=player_a.id).first()
+    penalty_tile = (
+        db_session.query(ReputationTile)
+        .filter_by(level=0, owner_id=player_a.id)
+        .first()
+    )
     assert penalty_tile is not None
+
+
+def test_vp_calculation_and_funds_ranking(db_session):
+    """Verifies that the 3-player fund bonus and Net Worth race VP work correctly."""
+    game = db_session.query(Game).first()
+
+    # 1. Setup 3 Players with different funds
+    # Player 1: Most funds ($50), 1st Millionaire (2VP)
+    p1 = db_session.get(Player, 1)
+    p1.personal_funds = 50
+    p1.vp = 2  # Manually simulate being 1st to Millionaire
+
+    # Player 2: Second funds ($30), 2nd Millionaire (1VP)
+    p2 = db_session.get(Player, 2)
+    p2.personal_funds = 30
+    p2.vp = 1
+
+    # Player 3: Least funds ($10)
+    p3 = Player(user_name="Charlie", game_id=game.id, player_order=2, personal_funds=10)
+    db_session.add(p3)
+    db_session.commit()
+
+    # 2. Run the leaderboard calculation
+    leaderboard = calculate_game_leaderboard(db_session, game.id)
+
+    # Map results by player ID for easy checking
+    scores = {res["player_id"]: res for res in leaderboard}
+
+    # 3. Assertions
+    # Player 1 (1st in funds): Race(2) + Funds(3) + Model/Presence (approx 1+1)
+    assert scores[p1.id]["breakdown"]["funds_bonus"] == 3
+    assert scores[p1.id]["breakdown"]["race_bonuses"] == 2
+
+    # Player 2 (2nd in funds): Race(1) + Funds(1)
+    assert scores[p2.id]["breakdown"]["funds_bonus"] == 1
+
+    # Player 3 (3rd in funds): Funds(0)
+    assert scores[p3.id]["breakdown"]["funds_bonus"] == 0

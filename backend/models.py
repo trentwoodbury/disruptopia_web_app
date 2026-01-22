@@ -14,6 +14,8 @@ class Game(Base):
     current_turn_index: Mapped[int] = mapped_column(default=0)
     game_phase: Mapped[str] = mapped_column(String(30), default="setup")
     p1_token_index: Mapped[int] = mapped_column(Integer, default=0)
+    millionaire_count: Mapped[int] = mapped_column(Integer, default=0)
+    billionaire_count: Mapped[int] = mapped_column(Integer, default=0)
 
     # Relationships
     players: Mapped[List["Player"]] = relationship(back_populates="game")
@@ -50,6 +52,9 @@ class Player(Base):
     power: Mapped[int] = mapped_column(Integer, default=0)
     subsidy_tokens: Mapped[int] = mapped_column(Integer, default=0)
     income: Mapped[int] = mapped_column(Integer, default=0)  # Power + Subsidies
+    vp: Mapped[int] = mapped_column(
+        Integer, default=0
+    )  # victory points, for the non-boardgame nerds.
 
     # Relationships
     game: Mapped["Game"] = relationship(back_populates="players")
