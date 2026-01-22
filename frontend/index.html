@@ -2,15 +2,57 @@
 <html lang="en">
 <head>
     <meta charset="UTF-8">
-    <title>Disruptopia</title>
-    <script src="https://cdn.socket.io/4.7.2/socket.io.min.js"></script>
-    <script src="https://cdn.jsdelivr.net/npm/phaser@3.60.0/dist/phaser.min.js"></script>
+    <title>Disruptopia - MVP Console</title>
     <style>
-        body { margin: 0; background-color: #222; overflow: hidden; }
-        canvas { display: block; margin: 0 auto; }
+        body { font-family: 'Courier New', monospace; background: #0d0d0d; color: #00ff41; padding: 20px; }
+        .grid-container { display: grid; grid-template-columns: 1fr 1fr; gap: 30px; }
+        section { border: 2px solid #00ff41; padding: 20px; border-radius: 8px; background: #1a1a1a; }
+        table { width: 100%; border-collapse: collapse; margin-top: 10px; }
+        th, td { border: 1px solid #00ff41; padding: 10px; text-align: center; }
+        button { background: #00ff41; color: #000; border: none; padding: 8px 12px; font-weight: bold; cursor: pointer; }
+        button:hover { background: #fff; }
+        .stats { display: flex; justify-content: space-around; font-size: 1.2rem; margin-bottom: 20px; background: #222; padding: 15px; border: 1px dashed #00ff41; }
+        #log { height: 120px; overflow-y: auto; background: #000; padding: 10px; border: 1px solid #444; margin-top: 20px; color: #008f11; }
     </style>
 </head>
 <body>
+
+    <h1>DISRUPTOPIA // ROOT_ACCESS</h1>
+
+    <div class="stats">
+        <div>PLAYER: <span id="user-name">IDENTIFYING...</span></div>
+        <div>POWER: <span id="stat-power">0</span></div>
+        <div>INCOME: <span id="stat-income">0</span></div>
+        <div>SUBSIDIES: <span id="stat-subsidies">0</span></div>
+        <div>FUNDS: $<span id="stat-funds">0</span></div>
+        <div>TOTAL WORKERS: <span id="stat-total-workers">0</span></div>
+        <div>AVAILABLE: <span id="stat-avail-workers">0</span></div>
+    </div>
+
+    <div class="grid-container">
+        <section>
+            <h2>QUARTERLY STRATEGY BOARD (Meeples)</h2>
+            <table>
+                <thead>
+                    <tr><th>Action</th><th>Workers</th><th>Action</th></tr>
+                </thead>
+                <tbody id="strategy-rows"></tbody>
+            </table>
+        </section>
+
+        <section>
+            <h2>WORLD MAP (Presence)</h2>
+            <table>
+                <thead>
+                    <tr><th>Region</th><th>Subsidy Tokens</th><th>Control</th></tr>
+                </thead>
+                <tbody id="world-rows"></tbody>
+            </table>
+        </section>
+    </div>
+
+    <div id="log"></div>
+
     <script src="app.js"></script>
 </body>
 </html>

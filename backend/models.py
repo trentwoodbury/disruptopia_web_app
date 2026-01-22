@@ -47,6 +47,9 @@ class Player(Base):
 
     # --- Tech Workers ---
     total_workers: Mapped[int] = mapped_column(Integer, default=3)  # Starts at 3, max 8
+    worker_placements: Mapped[List["WorkerPlacement"]] = relationship(
+        back_populates="player"
+    )
 
     # --- Stats (Calculated & Stored for UI) ---
     power: Mapped[int] = mapped_column(Integer, default=0)
@@ -128,7 +131,7 @@ class WorkerPlacement(Base):
     # (e.g., 'buy_chips', 'raise_funds', 'recruit')
     action_type: Mapped[str] = mapped_column(String(50))
 
-    player: Mapped["Player"] = relationship()
+    player: Mapped["Player"] = relationship(back_populates="worker_placements")
 
 
 class Presence(Base):

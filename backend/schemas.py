@@ -7,8 +7,9 @@ class ActionRequest(BaseModel):
     """Generic schema for worker placement actions."""
 
     player_id: int
+    game_id: int
     action_type: str
-    worker_count: int = 1
+    worker_ids: List[int] = Field(..., examples=[[1], [4, 5]])
     target_region: Optional[int] = None
 
 
