@@ -33,7 +33,6 @@ def resolve_round(game_id: int, db: Session = Depends(get_db)):
 
 @app.post("/actions/place-worker", tags=["Actions"])
 def place_worker(req: schemas.ActionRequest, db: Session = Depends(get_db)):
-    """Allows players to put workers on the board during the Strategy Phase."""
     return game_engine.place_worker(
         db, req.player_id, req.worker_number, req.action_type
     )
@@ -42,7 +41,6 @@ def place_worker(req: schemas.ActionRequest, db: Session = Depends(get_db)):
 @app.post("/actions/play-card", tags=["Actions"])
 def play_card(req: schemas.CardPlayRequest, db: Session = Depends(get_db)):
     """Executes playing an action card or slotting an effect card."""
-    # This calls your engine and then triggers the Card Effect Resolver
     result = game_engine.play_card(db, req.player_id, req.card_id, req.target_slot)
 
     # If it's an immediate action card, we apply the effect now
