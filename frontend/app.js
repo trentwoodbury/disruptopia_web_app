@@ -1,5 +1,5 @@
 const GAME_ID = 1;
-const PLAYER_ID = 1;
+let PLAYER_ID = parseInt(localStorage.getItem('active_player_id')) || null;
 let socket;
 
 const ACTIONS = [
@@ -17,40 +17,85 @@ let currentGameState = null;
 
 async function init() {
     renderStrategyBoard();
+    renderPlayerStats();
     renderWorldMap();
     connectWebSocket();
     refreshData();
 }
 
 function connectWebSocket() {
-    socket = new WebSocket(`ws://localhost:8000/ws/${GAME_ID}`);
+    if (socket) socket.close();
+    socket = new WebSocket(`ws://127.0.0.1:8000/ws/${GAME_ID}`);
     socket.onmessage = () => refreshData();
+}
+
+function switchPlayer(newId) {
+    if (!newId) return;
+    PLAYER_ID = parseInt(newId);
+    localStorage.setItem('active_player_id', PLAYER_ID);
+    refreshData();
 }
 
 async function refreshData() {
     try {
-        const response = await fetch(`http://localhost:8000/game/${GAME_ID}/state`);
+        const response = await fetch(`http://127.0.0.1:8000/game/${GAME_ID}/state`);
         currentGameState = await response.json();
 
-        // DEBUG: See who is actually in the database
-        console.log("Players found in DB:", currentGameState.players);
+        // 1. Update Player Selector if needed
+        updatePlayerSelector(currentGameState.players);
 
-        // If PLAYER_ID 1 isn't found, let's grab the first player available
-        // just so the MVP works while we're testing.
-        const me = currentGameState.players.find(p => p.id === PLAYER_ID) || currentGameState.players[0];
+        // 2. Identify the active player
+        const me = currentGameState.players.find(p => p.id === PLAYER_ID);
 
         if (me) {
-            // Update the global PLAYER_ID to match the actual ID from the DB
-            // (Only do this for the MVP skeleton)
-            // PLAYER_ID = me.id;
             updateUI(me);
+            updateStatsTable(currentGameState.players);
         } else {
-            addLog("Error: No players found in this game.");
+            document.getElementById('user-name').innerText = "NOT_SELECTED";
+            addLog("System: Please select an identity from the ACT_AS menu.");
         }
     } catch (err) {
         console.error("Sync Error:", err);
-        addLog("Error: Could not connect to backend.");
+        addLog(`Error: Could not connect to backend at 127.0.0.1:8000. (${err.message})`);
+
+        // If it's a TypeError, it might be a CORS issue or the server is down
+        if (err instanceof TypeError) {
+            console.warn("Possible CORS or Server Down. Check if 'run.bat' terminal is active.");
+        }
     }
+}
+
+function updatePlayerSelector(players) {
+    const select = document.getElementById('player-select');
+    if (!select || select.options.length > 1) return; // Only populate once
+
+    players.forEach(p => {
+        const opt = document.createElement('option');
+        opt.value = p.id;
+        opt.innerText = p.name;
+        if (p.id === PLAYER_ID) opt.selected = true;
+        select.appendChild(opt);
+    });
+}
+
+function updateStatsTable(players) {
+    const container = document.getElementById('stats-rows');
+    if (!container) return;
+
+    container.innerHTML = players.map(p => {
+        const nwLabel = p.net_worth === 0 ? "Startup" : p.net_worth === 1 ? "Millionaire" : "Billionaire";
+        const isMe = p.id === PLAYER_ID ? 'style="background: #004d1a"' : '';
+        return `
+            <tr ${isMe}>
+                <td>${p.id === PLAYER_ID ? '<strong>(YOU)</strong> ' : ''}${p.name}</td>
+                <td><strong>${nwLabel}</strong></td>
+                <td>${p.reputation}</td>
+                <td>Lvl ${p.compute_level}</td>
+                <td>v${p.model_version}.0</td>
+                <td>${p.total_worker_count}</td>
+            </tr>
+        `;
+    }).join('');
 }
 
 function updateUI(me) {
@@ -64,20 +109,26 @@ function updateUI(me) {
     const placedCount = me.placed_worker_numbers.length;
     document.getElementById('stat-avail-workers').innerText = me.total_worker_count - placedCount;
 
-    // Refresh the Strategy Board counts
+    // Refresh the Strategy Board counts (now worker IDs)
     ACTIONS.forEach(action => {
         const slug = action.toLowerCase().replace(/ /g, "_");
-        // Count how many workers (from ANY player) are in this slot
-        const count = currentGameState.placements.filter(p => p.action_type === slug).length;
+        // Get all worker numbers placed in this slot
+        const placements = currentGameState.placements.filter(p => p.action_type === slug);
+        const workerIds = placements.map(p => p.worker_number).sort((a, b) => a - b).join(", ");
+
         const cell = document.getElementById(`count-${action.toLowerCase().replace(/ /g, '-')}`);
-        if (cell) cell.innerText = count;
+        if (cell) cell.innerText = workerIds || "—";
     });
 }
 
 async function placeWorker(actionName) {
-    if (!currentGameState) return;
+    if (!currentGameState || !PLAYER_ID) {
+        addLog("Error: Identity required. Please select a player.");
+        return;
+    }
 
     const me = currentGameState.players.find(p => p.id === PLAYER_ID);
+    if (!me) return;
 
     // 1. Identify which worker numbers are already on the board
     const usedNumbers = currentGameState.placements
@@ -118,8 +169,7 @@ async function placeWorker(actionName) {
             addLog(`Success: Worker ${nextWorkerNumber} assigned to ${actionName}.`);
         } else {
             const errorData = await response.json();
-            console.error("422 Details:", errorData.detail); // This helps see exactly what failed
-            addLog(`Error: ${response.status} - Check console for details.`);
+            addLog(`Error: ${response.status} - ${errorData.detail}`);
         }
     } catch (err) {
         addLog("Network Error: Connectivity lost.");
@@ -128,12 +178,17 @@ async function placeWorker(actionName) {
 
 // --- RENDER HELPERS (Keep these the same) ---
 
+function renderPlayerStats() {
+    const container = document.getElementById('stats-rows');
+    if (container) container.innerHTML = '<tr><td colspan="6">Establishing Uplink...</td></tr>';
+}
+
 function renderStrategyBoard() {
     const container = document.getElementById('strategy-rows');
     container.innerHTML = ACTIONS.map(action => `
         <tr>
             <td>${action}</td>
-            <td id="count-${action.toLowerCase().replace(/ /g, '-')}">0</td>
+            <td id="count-${action.toLowerCase().replace(/ /g, '-')}">—</td>
             <td><button onclick="placeWorker('${action}')">Assign Tech Worker</button></td>
         </tr>
     `).join('');
@@ -144,14 +199,199 @@ function renderWorldMap() {
     container.innerHTML = REGIONS.map((name, index) => `
         <tr>
             <td>${name}</td>
-            <td id="subsidy-${index+1}">0</td>
-            <td><button onclick="addPresence(${index+1})">Deploy Presence</button></td>
+            <td id="subsidy-${index + 1}">0</td>
+            <td><button onclick="addPresence(${index + 1})">Deploy Presence</button></td>
         </tr>
     `).join('');
 }
 
+// --- Strategy Execution Loop ---
+
+async function startStrategyExecution() {
+    addLog("SYSTEM: Initiating Quarterly Strategy Resolution Flow...");
+    console.log("EXECUTION START: refreshData...");
+
+    try {
+        await refreshData();
+        if (!currentGameState) {
+            addLog("CRITICAL: Could not fetch game state from server.");
+            return;
+        }
+
+        // 1. Establish Resolution Order
+        const p1Index = currentGameState.p1_index ?? 0;
+        const playersByOrder = [...currentGameState.players].sort((a, b) => a.id - b.id);
+
+        if (playersByOrder.length === 0) {
+            addLog("SYSTEM: No players found in game state.");
+            return;
+        }
+
+        const sortedPlayers = [];
+        for (let i = 0; i < playersByOrder.length; i++) {
+            const p = playersByOrder[(p1Index + i) % playersByOrder.length];
+            if (p) sortedPlayers.push(p);
+        }
+
+        console.log("Sorted Players Mapping:", sortedPlayers.map(p => `ID:${p.id} Name:${p.name}`));
+        addLog(`SEQUENCE: [${sortedPlayers.map(p => p.name).join(" -> ")}]`);
+
+        // 2. Resolve Players Individually
+        for (const player of sortedPlayers) {
+            addLog(`RESOLUTION: Resolving Strategy for [${player.name}]...`);
+            console.log(`Processing Player: ${player.name} (ID: ${player.id})`);
+
+            let resolvedNums = new Set();
+            let isPlayerResolved = false;
+
+            while (!isPlayerResolved) {
+                // Re-fetch placements to catch dynamic hires
+                const pPlacements = currentGameState.placements
+                    .filter(p => p.player_id === player.id && !resolvedNums.has(p.worker_number))
+                    .sort((a, b) => a.worker_number - b.worker_number);
+
+                console.log(`Queue for ${player.name}:`, pPlacements.map(pl => pl.worker_number));
+
+                if (pPlacements.length === 0) {
+                    isPlayerResolved = true;
+                    continue;
+                }
+
+                let i = 0;
+                while (i < pPlacements.length) {
+                    const pl = pPlacements[i];
+                    addLog(`STEP: [${player.name}] resolving Worker ${pl.worker_number} at ${pl.action_type}...`);
+
+                    // Handle Raise Funds Chunks
+                    if (pl.action_type === "raise_funds") {
+                        let chunk = [pl.worker_number];
+                        while (i + 1 < pPlacements.length &&
+                            pPlacements[i + 1].action_type === "raise_funds" &&
+                            pPlacements[i + 1].worker_number === pl.worker_number + 1) {
+                            i++;
+                            chunk.push(pPlacements[i].worker_number);
+                        }
+                        await callActionEndpoint("raise-funds", { player_id: player.id, chunks: chunk });
+                        chunk.forEach(n => resolvedNums.add(n));
+                    }
+                    // Handle Interactive: Recruit
+                    else if (pl.action_type === "recruit") {
+                        const target = await promptUserChoice("Dynamic Recruitment", "Select destination for the new tech talent:", ACTIONS);
+                        await callActionEndpoint("recruit", { player_id: player.id, target_action: target.toLowerCase().replace(/ /g, "_") });
+                        resolvedNums.add(pl.worker_number);
+                        break; // Re-scan to find the new worker
+                    }
+                    // Handle Interactive: Scale Presence
+                    else if (pl.action_type === "scale_presence") {
+                        const reg = await promptUserChoice("Market Expansion", "Choose region to deploy presence:", REGIONS);
+                        const rId = REGIONS.indexOf(reg) + 1;
+                        await callActionEndpoint("scale_presence", { player_id: player.id, region_id: rId });
+                        resolvedNums.add(pl.worker_number);
+                    }
+                    // Automatic Actions
+                    else {
+                        const slug = pl.action_type.replace(/_/g, "-");
+                        const params = { player_id: player.id };
+                        if (pl.action_type === "train_model") params.worker_count = 1;
+                        await callActionEndpoint(slug, params);
+                        resolvedNums.add(pl.worker_number);
+                    }
+
+                    i++;
+                    await refreshData();
+                }
+            }
+        }
+
+        addLog("SYSTEM: All strategies resolved. Finalizing round...");
+        await finishRound();
+
+    } catch (err) {
+        console.error("Resolution Loop Crash:", err);
+        addLog(`SYSTEM FATAL: ${err.message}`);
+    }
+}
+
+async function callActionEndpoint(slug, params) {
+    console.log(`Calling Endpoint: ${slug} with params`, params);
+    try {
+        let url = `http://127.0.0.1:8000/actions/execute/${slug}`;
+        let options = {
+            method: "POST",
+            headers: { "Content-Type": "application/json" }
+        };
+
+        if (slug === "raise-funds") {
+            options.body = JSON.stringify(params);
+        } else {
+            const query = new URLSearchParams(params).toString();
+            url += `?${query}`;
+        }
+
+        const res = await fetch(url, options);
+        const data = await res.json();
+
+        if (res.ok) {
+            addLog(`SUCCESS: ${JSON.stringify(data)}`);
+        } else {
+            addLog(`ERROR: ${data.detail || "Unknown Server Error"}`);
+        }
+    } catch (err) {
+        addLog("ERROR: Request timed out or network lost.");
+    }
+}
+
+async function finishRound() {
+    console.log("Finalizing Round...");
+    try {
+        const res = await fetch(`http://127.0.0.1:8000/game/${GAME_ID}/finish-round`, { method: "POST" });
+        if (res.ok) {
+            const data = await res.json();
+            addLog(`ROUND COMPLETE. Board reset. Next P1: Player Index ${data.new_p1_index}`);
+            await refreshData();
+            renderStrategyBoard(); // Reset UI IDs
+        }
+    } catch (err) {
+        addLog("ERROR: Post-round cleanup failed.");
+    }
+}
+
+// --- Modal Helper ---
+
+function promptUserChoice(title, desc, options) {
+    return new Promise((resolve) => {
+        const modal = document.getElementById('choice-modal');
+        const titleEl = document.getElementById('modal-title');
+        const descEl = document.getElementById('modal-desc');
+        const optionsEl = document.getElementById('modal-options');
+
+        titleEl.innerText = title;
+        descEl.innerText = desc;
+        optionsEl.innerHTML = "";
+
+        options.forEach(opt => {
+            const btn = document.createElement('button');
+            btn.innerText = opt;
+            btn.style.padding = "10px";
+            btn.style.margin = "5px";
+            btn.style.cursor = "pointer";
+            btn.style.background = "#444";
+            btn.style.color = "#fff";
+            btn.style.border = "1px solid #00ff41";
+            btn.onclick = () => {
+                modal.style.display = "none";
+                resolve(opt);
+            };
+            optionsEl.appendChild(btn);
+        });
+
+        modal.style.display = "flex";
+    });
+}
+
 function addLog(msg) {
     const log = document.getElementById('log');
+    if (!log) return;
     log.innerHTML += `<div>> ${msg}</div>`;
     log.scrollTop = log.scrollHeight;
 }

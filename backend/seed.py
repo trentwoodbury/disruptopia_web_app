@@ -139,3 +139,7 @@ def seed_initial_game():
         db.rollback()
     finally:
         db.close()
+
+
+if __name__ == "__main__":
+    seed_initial_game()

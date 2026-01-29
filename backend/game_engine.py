@@ -387,7 +387,7 @@ def execute_increase_net_worth(db: Session, player_id: int):
 
 
 def execute_recruit_worker(db: Session, player_id: int, target_action: str):
-    """Resolves the Recruit action."""
+    """Resolves the Recruit action and immediately places the new worker."""
     player = db.get(Player, player_id)
     next_num = player.total_workers + 1
     if next_num > 8:
@@ -402,6 +402,8 @@ def execute_recruit_worker(db: Session, player_id: int, target_action: str):
 
     player.corporate_funds -= tier["money"]
     player.total_workers = next_num
+    
+    # Immediately place the new worker on the board in the chosen slot
     db.add(
         WorkerPlacement(
             game_id=player.game_id,
@@ -411,7 +413,11 @@ def execute_recruit_worker(db: Session, player_id: int, target_action: str):
         )
     )
     db.commit()
-    return {"action": "worker_recruited", "new_total": player.total_workers}
+    return {
+        "action": "worker_recruited", 
+        "new_total": player.total_workers,
+        "placed_at": target_action
+    }
 
 
 def execute_raise_funds_sequence(db: Session, player_id: int, chunks: list[int]):
