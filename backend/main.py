@@ -152,6 +152,9 @@ def get_game_state(game_id: int, db: Session = Depends(get_db)):
                 "model_version": p.model_version,
                 "total_worker_count": p.total_workers,
                 "placed_worker_numbers": [w.worker_number for w in p.worker_placements],
+                "subsidy_tokens": p.subsidy_tokens,
+                "corporate_funds": p.corporate_funds,
+                "personal_funds": p.personal_funds,
             }
             for p in players
         ],
@@ -248,3 +251,11 @@ def finish_round(game_id: int, db: Session = Depends(get_db)):
         "new_p1_index": game.p1_token_index,
         "leaderboard": leaderboard
     }
+
+
+@app.post("/actions/undo-placement")
+def undo_placement(player_id: int, db: Session = Depends(get_db)):
+    result = game_engine.undo_last_placement(db, player_id)
+    if "error" in result:
+        raise HTTPException(status_code=400, detail=result["error"])
+    return result

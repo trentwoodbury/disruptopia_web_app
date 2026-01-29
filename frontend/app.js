@@ -103,6 +103,9 @@ function updateUI(me) {
     document.getElementById('user-name').innerText = me.name;
     document.getElementById('stat-power').innerText = me.power;
     document.getElementById('stat-income').innerText = me.income;
+    document.getElementById('stat-subsidies').innerText = me.subsidy_tokens;
+    document.getElementById('stat-corp-funds').innerText = `$${me.corporate_funds}`;
+    document.getElementById('stat-pers-funds').innerText = `$${me.personal_funds}`;
     document.getElementById('stat-total-workers').innerText = me.total_worker_count;
 
     // Check placed workers
@@ -257,49 +260,45 @@ async function startStrategyExecution() {
                     continue;
                 }
 
-                let i = 0;
-                while (i < pPlacements.length) {
-                    const pl = pPlacements[i];
-                    addLog(`STEP: [${player.name}] resolving Worker ${pl.worker_number} at ${pl.action_type}...`);
+                const pl = pPlacements[0];
+                addLog(`STEP: [${player.name}] resolving ${pl.action_type}...`);
 
-                    // Handle Raise Funds Chunks
-                    if (pl.action_type === "raise_funds") {
-                        let chunk = [pl.worker_number];
-                        while (i + 1 < pPlacements.length &&
-                            pPlacements[i + 1].action_type === "raise_funds" &&
-                            pPlacements[i + 1].worker_number === pl.worker_number + 1) {
-                            i++;
-                            chunk.push(pPlacements[i].worker_number);
-                        }
-                        await callActionEndpoint("raise-funds", { player_id: player.id, chunks: chunk });
-                        chunk.forEach(n => resolvedNums.add(n));
-                    }
-                    // Handle Interactive: Recruit
-                    else if (pl.action_type === "recruit") {
-                        const target = await promptUserChoice("Dynamic Recruitment", "Select destination for the new tech talent:", ACTIONS);
-                        await callActionEndpoint("recruit", { player_id: player.id, target_action: target.toLowerCase().replace(/ /g, "_") });
-                        resolvedNums.add(pl.worker_number);
-                        break; // Re-scan to find the new worker
-                    }
-                    // Handle Interactive: Scale Presence
-                    else if (pl.action_type === "scale_presence") {
-                        const reg = await promptUserChoice("Market Expansion", "Choose region to deploy presence:", REGIONS);
-                        const rId = REGIONS.indexOf(reg) + 1;
-                        await callActionEndpoint("scale_presence", { player_id: player.id, region_id: rId });
-                        resolvedNums.add(pl.worker_number);
-                    }
-                    // Automatic Actions
-                    else {
-                        const slug = pl.action_type.replace(/_/g, "-");
-                        const params = { player_id: player.id };
-                        if (pl.action_type === "train_model") params.worker_count = 1;
-                        await callActionEndpoint(slug, params);
-                        resolvedNums.add(pl.worker_number);
-                    }
-
-                    i++;
-                    await refreshData();
+                // Handle Raise Funds Aggregation (all at once for grouping bonus)
+                if (pl.action_type === "raise_funds") {
+                    const rfPlacements = pPlacements.filter(p => p.action_type === "raise_funds");
+                    // We send the count as a single chunk to the current backend implementation
+                    // which treats each chunk as a source of income.
+                    await callActionEndpoint("raise-funds", {
+                        player_id: player.id,
+                        chunks: [rfPlacements.length]
+                    });
+                    rfPlacements.forEach(p => resolvedNums.add(p.worker_number));
                 }
+                // Handle Interactive: Recruit
+                else if (pl.action_type === "recruit") {
+                    const target = await promptUserChoice("Dynamic Recruitment", "Select destination for the new tech talent:", ACTIONS);
+                    await callActionEndpoint("recruit", { player_id: player.id, target_action: target.toLowerCase().replace(/ /g, "_") });
+                    resolvedNums.add(pl.worker_number);
+                }
+                // Handle Interactive: Scale Presence
+                else if (pl.action_type === "scale_presence") {
+                    const reg = await promptUserChoice("Market Expansion", "Choose region to deploy presence:", REGIONS);
+                    const rId = REGIONS.indexOf(reg) + 1;
+                    await callActionEndpoint("scale-presence", { player_id: player.id, region_id: rId });
+                    resolvedNums.add(pl.worker_number);
+                }
+                // Automatic Actions
+                else {
+                    const slug = pl.action_type.replace(/_/g, "-");
+                    const params = { player_id: player.id };
+                    if (pl.action_type === "train_model") params.worker_count = 1;
+                    await callActionEndpoint(slug, params);
+                    resolvedNums.add(pl.worker_number);
+                }
+
+                await refreshData();
+                // We don't increment i manually here because we use resolvedNums 
+                // and re-filter pPlacements in the next iteration of the while loop.
             }
         }
 
@@ -387,6 +386,30 @@ function promptUserChoice(title, desc, options) {
 
         modal.style.display = "flex";
     });
+}
+
+async function undoPlacement() {
+    if (!PLAYER_ID) {
+        addLog("Error: Identity required.");
+        return;
+    }
+
+    try {
+        const response = await fetch(`http://127.0.0.1:8000/actions/undo-placement?player_id=${PLAYER_ID}`, {
+            method: "POST"
+        });
+
+        if (response.ok) {
+            const data = await response.json();
+            addLog(`Undo: Worker ${data.worker_number} removed from ${data.from_action}.`);
+            await refreshData();
+        } else {
+            const err = await response.json();
+            addLog(`Error: ${err.detail}`);
+        }
+    } catch (err) {
+        addLog(`System Error: ${err.message}`);
+    }
 }
 
 function addLog(msg) {

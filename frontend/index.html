@@ -52,13 +52,35 @@
         }
 
         .stats {
-            display: flex;
-            justify-content: space-around;
-            font-size: 1.2rem;
-            margin-bottom: 20px;
-            background: #222;
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));
+            gap: 15px;
+            font-size: 0.9rem;
+            margin-bottom: 25px;
+            background: #1a1a1a;
             padding: 15px;
-            border: 1px dashed #00ff41;
+            border: 1px solid #00ff41;
+            box-shadow: 0 0 10px rgba(0, 255, 65, 0.2);
+        }
+
+        .stats div {
+            padding: 5px;
+            border: 1px solid #333;
+            text-align: center;
+            background: #0d0d0d;
+        }
+
+        .stat-label {
+            color: #888;
+            font-size: 0.7rem;
+            display: block;
+            margin-bottom: 4px;
+            text-transform: uppercase;
+        }
+
+        .stat-value {
+            font-weight: bold;
+            font-size: 1.1rem;
         }
 
         #log {
@@ -78,20 +100,44 @@
     <h1>DISRUPTOPIA // ROOT_ACCESS</h1>
 
     <div class="stats">
-        <div>PLAYER: <span id="user-name">IDENTIFYING...</span></div>
-        <div id="identity-settings" style="margin-left: 20px;">
-            <label for="player-select">ACT_AS:</label>
-            <select id="player-select" onchange="switchPlayer(this.value)">
-                <option value="">-- Choose Identity --</option>
-            </select>
+        <div style="grid-column: span 2;">
+            <span class="stat-label">IDENTITY</span>
+            <span id="user-name" class="stat-value">IDENTIFYING...</span>
+            <div id="identity-settings" style="margin-top: 5px; border: none; padding: 0;">
+                <select id="player-select" onchange="switchPlayer(this.value)"
+                    style="background: #000; color: #00ff41; border: 1px solid #00ff41; font-size: 0.8rem;">
+                    <option value="">-- Switch --</option>
+                </select>
+            </div>
         </div>
-        <div style="flex-grow: 1;"></div>
-        <div>POWER: <span id="stat-power">0</span></div>
-        <div>INCOME: <span id="stat-income">0</span></div>
-        <div>SUBSIDIES: <span id="stat-subsidies">0</span></div>
-        <div>FUNDS: $<span id="stat-funds">0</span></div>
-        <div>TOTAL WORKERS: <span id="stat-total-workers">0</span></div>
-        <div>AVAILABLE: <span id="stat-avail-workers">0</span></div>
+        <div>
+            <span class="stat-label">POWER</span>
+            <span id="stat-power" class="stat-value">0</span>
+        </div>
+        <div>
+            <span class="stat-label">INCOME</span>
+            <span id="stat-income" class="stat-value">0</span>
+        </div>
+        <div>
+            <span class="stat-label">SUBSIDIES</span>
+            <span id="stat-subsidies" class="stat-value">0</span>
+        </div>
+        <div>
+            <span class="stat-label">CORP FUNDS</span>
+            <span id="stat-corp-funds" class="stat-value">$0</span>
+        </div>
+        <div>
+            <span class="stat-label">PERS FUNDS</span>
+            <span id="stat-pers-funds" class="stat-value">$0</span>
+        </div>
+        <div>
+            <span class="stat-label">WORKERS</span>
+            <span id="stat-total-workers" class="stat-value">0</span>
+        </div>
+        <div>
+            <span class="stat-label">AVAILABLE</span>
+            <span id="stat-avail-workers" class="stat-value">0</span>
+        </div>
     </div>
 
     <div class="grid-container">
@@ -111,6 +157,10 @@
                 <button id="btn-execute-strategy" onclick="startStrategyExecution()"
                     style="padding: 10px 20px; font-weight: bold; background: #8b0000; color: white; border: none; cursor: pointer;">
                     EXECUTE QUARTERLY STRATEGY
+                </button>
+                <button id="btn-undo-placement" onclick="undoPlacement()"
+                    style="padding: 10px 20px; font-weight: bold; background: #444; color: white; border: none; cursor: pointer; margin-left: 10px;">
+                    UNDO PLACEMENT
                 </button>
             </div>
         </section>

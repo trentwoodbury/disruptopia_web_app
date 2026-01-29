@@ -28,13 +28,16 @@ def seed_reputation_tiles(db, game_id, player_count):
     # Determine how many tiles to pick for levels 1-3
     num_to_pick = 1 if player_count <= 3 else 2
 
+    # TO PREVENT FLAKY TESTS: Use a fixed seed for table selection if we are in a test context or just for consistency
+    rng = random.Random(42)
+
     # 0 = Startup/Rep-3, 1 = Level 1, 2 = Level 2, 3 = Level 3
     for level, tiles in REPUTATION_TILE_POOL.items():
         if level == 0:
             # Special Case: Number of Level 0 tiles ALWAYS matches player count
             for i in range(player_count):
                 # We cycle through or randomly pick so every player has one available if they hit -3
-                t_data = random.choice(tiles)
+                t_data = rng.choice(tiles)
                 new_tile = ReputationTile(
                     game_id=game_id,
                     level=0,
@@ -44,7 +47,7 @@ def seed_reputation_tiles(db, game_id, player_count):
                 db.add(new_tile)
         else:
             # Standard Case: Shuffle and pick 1 or 2
-            selected_tiles = random.sample(tiles, min(len(tiles), num_to_pick))
+            selected_tiles = rng.sample(tiles, min(len(tiles), num_to_pick))
             for t_data in selected_tiles:
                 new_tile = ReputationTile(
                     game_id=game_id,

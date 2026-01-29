@@ -431,6 +431,7 @@ def execute_raise_funds_sequence(db: Session, player_id: int, chunks: list[int])
             continue
         siphoned = player.corporate_funds
         player.personal_funds += siphoned
+        # We set it to 0 before drawing the new income
         player.corporate_funds = 0
 
         if mods["worker_income_efficiency"]:
@@ -444,6 +445,9 @@ def execute_raise_funds_sequence(db: Session, player_id: int, chunks: list[int])
                 cap = 39
 
         drawn = min(player.income, cap)
+        # Use += here to ensure it adds correctly if there were multiple chunks 
+        # (Though we set to 0 at the start of each chunk, so = is actually fine, 
+        # but let's be explicit about the 'new' funds being the drawn amount)
         player.corporate_funds = drawn
         summary.append({"workers": worker_count, "siphoned": siphoned, "drawn": drawn})
 
@@ -670,4 +674,24 @@ def resolve_entire_round(db: Session, game_id: int):
         "action": "round_resolved",
         "new_p1_index": game.p1_token_index,
         "leaderboard": leaderboard,
+    }
+def undo_last_placement(db: Session, player_id: int):
+    """Removes the highest numbered worker placement for the given player."""
+    last_placement = (
+        db.query(WorkerPlacement)
+        .filter_by(player_id=player_id)
+        .order_by(WorkerPlacement.worker_number.desc())
+        .first()
+    )
+    if not last_placement:
+        return {"error": "No workers placed to undo."}
+
+    worker_num = last_placement.worker_number
+    action = last_placement.action_type
+    db.delete(last_placement)
+    db.commit()
+    return {
+        "action": "worker_removed",
+        "worker_number": worker_num,
+        "from_action": action,
     }
