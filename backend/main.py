@@ -155,6 +155,7 @@ def get_game_state(game_id: int, db: Session = Depends(get_db)):
                 "subsidy_tokens": p.subsidy_tokens,
                 "corporate_funds": p.corporate_funds,
                 "personal_funds": p.personal_funds,
+                "presence_regions": [pres.region_id for pres in p.presence],
             }
             for p in players
         ],
@@ -259,3 +260,10 @@ def undo_placement(player_id: int, db: Session = Depends(get_db)):
     if "error" in result:
         raise HTTPException(status_code=400, detail=result["error"])
     return result
+
+
+@app.post("/game/reset")
+def reset_game():
+    """Drops all tables and re-seeds the game (Factory Reset)."""
+    from backend import reset_utils
+    return reset_utils.reset_game_state()

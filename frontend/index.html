@@ -162,24 +162,18 @@
                     style="padding: 10px 20px; font-weight: bold; background: #444; color: white; border: none; cursor: pointer; margin-left: 10px;">
                     UNDO PLACEMENT
                 </button>
+                <button id="btn-reset-game" onclick="resetGame()"
+                    style="padding: 10px 20px; font-weight: bold; background: #000; color: #ff0000; border: 1px solid #ff0000; cursor: pointer; margin-left: 10px;">
+                    RESET GAME
+                </button>
             </div>
         </section>
 
         <section>
-            <h2>PLAYER STATISTICS (Market Cap)</h2>
-            <table>
-                <thead>
-                    <tr>
-                        <th>Player</th>
-                        <th>Net Worth</th>
-                        <th>Reputation</th>
-                        <th>Compute</th>
-                        <th>Model</th>
-                        <th>Workers</th>
-                    </tr>
-                </thead>
-                <tbody id="stats-rows"></tbody>
-            </table>
+            <h2>PLAYER DASHBOARD</h2>
+            <div id="player-dashboard" style="overflow-x: auto;">
+                <!-- Detailed Stats Table will be rendered here -->
+            </div>
         </section>
 
         <section>

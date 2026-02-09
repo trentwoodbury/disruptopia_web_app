@@ -12,6 +12,19 @@ const REGIONS = [
     "Central Asia", "East Asia", "South Asia", "Southeast Asia", "Oceania"
 ];
 
+const WORLD_MAP = {
+    1: [2, 6],
+    2: [1, 3, 7],
+    3: [2, 4, 8],
+    4: [3, 5, 9],
+    5: [4, 10],
+    6: [1, 7],
+    7: [2, 6, 8],
+    8: [3, 7, 9],
+    9: [4, 8, 10],
+    10: [5, 9],
+};
+
 // This variable will store the latest state from the server
 let currentGameState = null;
 
@@ -78,24 +91,141 @@ function updatePlayerSelector(players) {
     });
 }
 
+const COMPUTE_COSTS = { 2: "$2", 3: "$3", 4: "$4", 5: "$5", 6: "$6", 7: "$7" };
+const MODEL_COSTS = { 1: "1w", 2: "1w", 3: "2w", 4: "2w", 5: "3w", 6: "4w", 7: "4w" };
+const WORKER_COSTS = { 4: "$2", 5: "$3", 6: "$4", 7: "$5", 8: "$6" };
+const PRESENCE_COSTS_LIST = [1, 3, 4, 5, 6, 8, 10, 12, 14];
+
 function updateStatsTable(players) {
-    const container = document.getElementById('stats-rows');
+    const container = document.getElementById('player-dashboard');
     if (!container) return;
 
-    container.innerHTML = players.map(p => {
-        const nwLabel = p.net_worth === 0 ? "Startup" : p.net_worth === 1 ? "Millionaire" : "Billionaire";
-        const isMe = p.id === PLAYER_ID ? 'style="background: #004d1a"' : '';
+    // Find the active player, or default to the first one for viewing if no player selected
+    const me = players.find(p => p.id === PLAYER_ID) || players[0];
+    if (!me) {
+        container.innerHTML = "Select a player to view dashboard.";
+        return;
+    }
+
+    renderPlayerDashboard(me, container);
+}
+
+function renderPlayerDashboard(player, container) {
+    // Helper to generate cells for a specific row type across the 3 sections
+    const generateCells = (type, section) => {
+        let values = []; // Array of values to render. null means empty spacer.
+
+        if (section === 'startup') {
+            if (type === 'compute') values = [null, 1, 2];
+            if (type === 'model') values = [0, 1, 2];
+            if (type === 'presence') values = [2]; // 1 starting, next is 2
+            if (type === 'workers') values = [3, 4]; // 3 starting
+        } else if (section === 'millionaire') {
+            if (type === 'compute') values = [3, 4];
+            if (type === 'model') values = [3, 4];
+            if (type === 'presence') values = [3, 4, 5, 6];
+            if (type === 'workers') values = [5, 6];
+        } else if (section === 'billionaire') {
+            if (type === 'compute') values = [5, 6, 7];
+            if (type === 'model') values = [5, 6, 7];
+            if (type === 'presence') values = [7, 8, 9, 10];
+            if (type === 'workers') values = [7, 8];
+        }
+
+        return values.map(val => {
+            if (val === null) {
+                // Invisible spacer
+                return `<div style="min-width: 40px; margin: 0 2px; visibility: hidden;">X</div>`;
+            }
+
+            let content = "";
+            let isOwned = false;
+            let showX = false;
+
+            if (type === 'compute') {
+                isOwned = player.compute_level >= val;
+                content = isOwned ? "X" : COMPUTE_COSTS[val] || "-";
+                showX = isOwned;
+            } else if (type === 'model') {
+                isOwned = player.model_version >= val;
+                content = isOwned ? "X" : MODEL_COSTS[val] || "-";
+                showX = isOwned;
+            } else if (type === 'workers') {
+                isOwned = player.total_worker_count >= val;
+                content = isOwned ? "X" : (val === 3 ? "X" : WORKER_COSTS[val] || "-");
+                showX = isOwned;
+            } else if (type === 'presence') {
+                const costIndex = val - 2;
+                const cost = PRESENCE_COSTS_LIST[costIndex];
+
+                isOwned = player.presence_count >= val;
+                content = isOwned ? "X" : (cost !== undefined ? `$${cost}` : "-");
+                showX = isOwned;
+            }
+
+            const bg = showX ? "#004d1a" : "#111";
+            const color = showX ? "#00ff41" : "#888";
+
+            return `<div style="
+                background: ${bg}; 
+                color: ${color}; 
+                border: 1px solid #333; 
+                padding: 10px; 
+                text-align: center; 
+                min-width: 40px; 
+                margin: 0 2px;
+                font-weight: bold;
+            ">${content}</div>`;
+        }).join('');
+    };
+
+    const styleSection = "flex: 1; border: 1px solid #00ff41; margin: 0 5px; padding: 5px; min-width: 200px;";
+    const styleHeader = "text-align: center; font-weight: bold; border-bottom: 1px solid #00ff41; margin-bottom: 10px; padding-bottom: 5px;";
+    const styleRow = "display: flex; justify-content: center; margin-bottom: 5px; align-items: center;";
+    const styleLabel = "width: 80px; font-size: 0.8em; color: #aaa; text-align: right; padding-right: 10px;";
+
+    const renderSection = (title, slug) => {
+        let isAchieved = false;
+        if (slug === 'startup') isAchieved = true; // Always achieved if playing
+        if (slug === 'millionaire') isAchieved = player.net_worth_level >= 1;
+        if (slug === 'billionaire') isAchieved = player.net_worth_level >= 2;
+
+        const checkMark = isAchieved ? " (X)" : "";
+
         return `
-            <tr ${isMe}>
-                <td>${p.id === PLAYER_ID ? '<strong>(YOU)</strong> ' : ''}${p.name}</td>
-                <td><strong>${nwLabel}</strong></td>
-                <td>${p.reputation}</td>
-                <td>Lvl ${p.compute_level}</td>
-                <td>v${p.model_version}.0</td>
-                <td>${p.total_worker_count}</td>
-            </tr>
-        `;
-    }).join('');
+        <div style="${styleSection}">
+            <div style="${styleHeader}">${title}${checkMark}</div>
+            
+            <div style="${styleRow}">
+                <div style="${styleLabel}">COMPUTE</div>
+                ${generateCells('compute', slug)}
+            </div>
+            
+            <div style="${styleRow}">
+                <div style="${styleLabel}">MODEL</div>
+                ${generateCells('model', slug)}
+            </div>
+            
+            <div style="${styleRow}">
+                <div style="${styleLabel}">PRESENCE</div>
+                ${generateCells('presence', slug)}
+            </div>
+
+            <div style="${styleRow}">
+                <div style="${styleLabel}">WORKERS</div>
+                ${generateCells('workers', slug)}
+            </div>
+        </div>
+    `;
+    };
+
+    container.innerHTML = `
+        <div style="display: flex; width: 100%; justify-content: space-between; align-items: flex-start;">
+            ${renderSection("STARTUP", "startup")}
+            ${renderSection("MILLIONAIRE", "millionaire")}
+            ${renderSection("BILLIONAIRE", "billionaire")}
+        </div>
+    `;
 }
 
 function updateUI(me) {
@@ -172,7 +302,9 @@ async function placeWorker(actionName) {
             addLog(`Success: Worker ${nextWorkerNumber} assigned to ${actionName}.`);
         } else {
             const errorData = await response.json();
-            addLog(`Error: ${response.status} - ${errorData.detail}`);
+            const errorMsg = errorData.detail || "Unknown error";
+            addLog(`Error: ${response.status} - ${errorMsg}`);
+            showErrorModal("Action Unavailable", errorMsg);
         }
     } catch (err) {
         addLog("Network Error: Connectivity lost.");
@@ -282,7 +414,32 @@ async function startStrategyExecution() {
                 }
                 // Handle Interactive: Scale Presence
                 else if (pl.action_type === "scale_presence") {
-                    const reg = await promptUserChoice("Market Expansion", "Choose region to deploy presence:", REGIONS);
+                    const currentRegions = player.presence_regions || [];
+                    const neighborIds = new Set();
+
+                    if (currentRegions.length === 0) {
+                        // Fallback: If no presence (shouldn't happen), assume all open
+                        [1, 2, 3, 4, 5, 6, 7, 8, 9, 10].forEach(n => neighborIds.add(n));
+                    } else {
+                        currentRegions.forEach(rId => {
+                            const neighbors = WORLD_MAP[rId] || [];
+                            neighbors.forEach(n => neighborIds.add(n));
+                        });
+                        // Remove potential duplicates or already owned regions
+                        currentRegions.forEach(rId => neighborIds.delete(rId));
+                    }
+
+                    const availableRegions = REGIONS.filter((name, idx) => neighborIds.has(idx + 1));
+
+                    if (availableRegions.length === 0) {
+                        addLog(`SKIPPED: No valid adjacent regions for expansion.`);
+                        resolvedNums.add(pl.worker_number);
+                        // IsPlayerResolved might loop if we don't handle it? 
+                        // We added to resolvedNums, so it should be fine.
+                        continue;
+                    }
+
+                    const reg = await promptUserChoice("Market Expansion", "Choose region to deploy presence:", availableRegions);
                     const rId = REGIONS.indexOf(reg) + 1;
                     await callActionEndpoint("scale-presence", { player_id: player.id, region_id: rId });
                     resolvedNums.add(pl.worker_number);
@@ -388,6 +545,33 @@ function promptUserChoice(title, desc, options) {
     });
 }
 
+function showErrorModal(title, message) {
+    const modal = document.getElementById('choice-modal');
+    const titleEl = document.getElementById('modal-title');
+    const descEl = document.getElementById('modal-desc');
+    const optionsEl = document.getElementById('modal-options');
+
+    titleEl.innerText = title;
+    descEl.innerText = message;
+    optionsEl.innerHTML = "";
+
+    const btn = document.createElement('button');
+    btn.innerText = "OK";
+    btn.style.padding = "10px";
+    btn.style.marginTop = "20px";
+    btn.style.cursor = "pointer";
+    btn.style.background = "#8b0000"; // Red for error
+    btn.style.color = "#fff";
+    btn.style.border = "1px solid #ff0000";
+
+    btn.onclick = () => {
+        modal.style.display = "none";
+    };
+
+    optionsEl.appendChild(btn);
+    modal.style.display = "flex";
+}
+
 async function undoPlacement() {
     if (!PLAYER_ID) {
         addLog("Error: Identity required.");
@@ -409,6 +593,27 @@ async function undoPlacement() {
         }
     } catch (err) {
         addLog(`System Error: ${err.message}`);
+    }
+}
+
+async function resetGame() {
+    if (!confirm("Are you sure you want to RESET the entire game? This cannot be undone.")) return;
+
+    try {
+        addLog("SYSTEM: Resetting Game State...");
+        const response = await fetch("http://127.0.0.1:8000/game/reset", { method: "POST" });
+        if (response.ok) {
+            addLog("SYSTEM: Game Reset Complete. Reloading data...");
+            // Clear identity
+            localStorage.removeItem('active_player_id');
+            PLAYER_ID = null;
+            document.getElementById('user-name').innerText = "IDENTIFYING...";
+            await init();
+        } else {
+            addLog("SYSTEM: Reset Failed.");
+        }
+    } catch (err) {
+        addLog(`SYSTEM: Error during reset - ${err.message}`);
     }
 }
 

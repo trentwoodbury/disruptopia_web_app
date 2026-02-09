@@ -8,6 +8,7 @@ from backend.config import (
     WORLD_MAP,
     NET_WORTH_COSTS,
     RECRUIT_COSTS,
+    PRESENCE_COSTS,
     MODEL_WORKER_COSTS,
     MARKETING_BONUSES,
 )
@@ -227,10 +228,139 @@ def calculate_game_leaderboard(db: Session, game_id: int):
 # ==========================================
 
 
-def execute_buy_chips(db: Session, player_id: int):
-    """Resolves the Buy Chips action."""
+def get_projected_player_state(db: Session, player_id: int, up_to_worker_number: int):
+    """
+    Simulates the state of the player after executing all workers < up_to_worker_number.
+    Returns a dict-like object (or just a dict) with the projected stats.
+    """
     player = db.get(Player, player_id)
-    next_level = player.compute_level + 1
+    
+    # Base state
+    state = {
+        "compute_level": player.compute_level,
+        "model_version": player.model_version,
+        "net_worth_level": player.net_worth_level,
+        "corporate_funds": player.corporate_funds,
+        "reputation": player.reputation,
+        "total_workers": player.total_workers,
+        "presence_count": player.presence_count,
+        "income": player.income, # Simplified, income updates are complex but usually stable within turn except for upgrades
+    }
+    
+    # Fetch active modifiers for more accurate simulation? 
+    # For now, let's assume basic modifiers are static or we re-fetch them.
+    # Actually, modifiers depend on Tiles, which shouldn't change mid-turn usually (unless we steal).
+    mods = get_player_modifiers(db, player_id)
+
+    # Fetch all placements for this player
+    placements = (
+        db.query(WorkerPlacement)
+        .filter(
+            WorkerPlacement.player_id == player_id,
+            WorkerPlacement.worker_number < up_to_worker_number
+        )
+        .order_by(WorkerPlacement.worker_number.asc())
+        .all()
+    )
+
+    for p in placements:
+        # Simulate effects of p.action_type
+        if p.action_type == "raise_funds":
+            # Simulation matches execute_raise_funds_sequence:
+            # 1. Existing Corporate Funds move to Personal (siphoned)
+            # 2. Corporate Funds reset to 0
+            # 3. New Income is added (capped)
+            
+            # Note: We don't strictly *need* to track personal_funds for validation 
+            # (validation only checks limits/availability), but let's be accurate.
+            # state["personal_funds"] += state["corporate_funds"] 
+            
+            # Siphon
+            state["corporate_funds"] = 0
+            
+            # Determine Gain
+            # If multiple workers were placed individually, they might count as separate chunks.
+            # However, in this loop we process them linearly 1 by 1.
+            # Single worker cap is 8.
+            gain = min(state["income"], 8)
+            
+            if mods["worker_income_efficiency"]:
+                gain = min(state["income"], 39)
+            
+            state["corporate_funds"] += gain
+
+        elif p.action_type == "buy_chips":
+            next_lvl = state["compute_level"] + 1
+            if next_lvl <= 7:
+                cost = COMPUTE_UPGRADE_COSTS.get(next_lvl, 0)
+                final_cost = max(0, cost + mods["compute_cost_offset"])
+                if state["corporate_funds"] >= final_cost:
+                    state["corporate_funds"] -= final_cost
+                    state["compute_level"] = next_lvl
+
+        elif p.action_type == "marketing":
+            bonus = MARKETING_BONUSES.get(state["net_worth_level"])
+            if bonus:
+                state["reputation"] = min(10, state["reputation"] + bonus["reputation"])
+                # Power update ignored for validation purposes usually
+
+        elif p.action_type == "increase_net_worth":
+            next_nw = state["net_worth_level"] + 1
+            if next_nw <= 2:
+                costs = NET_WORTH_COSTS.get(next_nw)
+                if state["corporate_funds"] >= costs["money"] and (state["reputation"] - costs["reputation"]) >= -3:
+                    state["corporate_funds"] -= costs["money"]
+                    state["reputation"] -= costs["reputation"]
+                    state["net_worth_level"] = next_nw
+
+        elif p.action_type == "recruit":
+            next_num = state["total_workers"] + 1
+            if next_num <= 8:
+                tier = RECRUIT_COSTS.get(next_num)
+                # Ensure we have funds
+                if state["corporate_funds"] >= tier["money"] and state["net_worth_level"] >= tier["min_nw"]:
+                    state["corporate_funds"] -= tier["money"]
+                    state["total_workers"] = next_num
+
+        elif p.action_type == "scale_presence":
+            # Presence count starts at 1 usually (Capital).
+            # If 1 presence, next is 2. Cost index 0.
+            # State needs presence_count.
+            # Wait, `get_projected_player_state` init didn't include `presence_count`. 
+            # I must fix that too.
+            current_presence = state.get("presence_count", 1) # Default to 1 if missing in my init logic (I need to add it)
+            cost_idx = current_presence - 1
+            if cost_idx < len(PRESENCE_COSTS):
+                cost = PRESENCE_COSTS[cost_idx]
+                if state["corporate_funds"] >= cost:
+                    state["corporate_funds"] -= cost
+                    state["presence_count"] = current_presence + 1
+
+        elif p.action_type == "train_model":
+            # Technically increases rep/power, but doesn't consume funds/compute (consumes worker count which is checked elsewhere).
+            # It DOES increase Model Version which might affect future checks.
+            # We must simulate upgrade.
+            # However, train_model can take multiple workers. 
+            # In our linear simulation, we see each worker individually. 
+            # For simplicity: Assume EACH valid Train Model placement attempts to upgrade.
+            # But wait, multiple workers might be needed for ONE upgrade.
+            # This is tricky. 
+            # If Model v3 needs 2 workers:
+            # W1 on Train -> Sees current v2 needing 2. Not enough alone. 
+            # W2 on Train -> Sees current v2 needing 2. Together make 2. Upgrade?
+            # Supporting multi-worker actions in linear projection is complex.
+            # FOR NOW: Since Train Model doesn't consume FUNDS, and Requirements are static per version... 
+            # We can skip updating model_version here unless critical. 
+            # But the user might train v2 then v3 in same turn? Unlikely/Hard.
+            # Let's stick to Funds tracking which is the User Request.
+            pass
+
+    return state
+
+
+def validate_buy_chips(db: Session, player_id: int, projected_state: dict):
+    """Checks requirements for Buy Chips using projected state."""
+    next_level = projected_state["compute_level"] + 1
     mods = get_player_modifiers(db, player_id)
 
     if next_level > 7:
@@ -239,12 +369,113 @@ def execute_buy_chips(db: Session, player_id: int):
     base_cost = COMPUTE_UPGRADE_COSTS.get(next_level)
     final_cost = max(0, base_cost + mods["compute_cost_offset"])
 
-    if player.corporate_funds < final_cost:
+    if projected_state["corporate_funds"] < final_cost:
         return {"error": f"Insufficient funds. Need ${final_cost}."}
 
     required_nw = COMPUTE_NET_WORTH_REQ.get(next_level, 0)
-    if player.net_worth_level < required_nw:
+    if projected_state["net_worth_level"] < required_nw:
+        # User requested specific checking. If we have funds but low NW:
         return {"error": "Net Worth too low."}
+
+    return None
+
+
+def validate_recruit(db: Session, player_id: int, projected_state: dict):
+    """Checks requirements for Recruit using projected state."""
+    next_num = projected_state["total_workers"] + 1
+    if next_num > 8:
+        return {"error": "Max workers reached."}
+
+    tier = RECRUIT_COSTS[next_num]
+    if (
+        projected_state["corporate_funds"] < tier["money"]
+        or projected_state["net_worth_level"] < tier["min_nw"]
+    ):
+        return {"error": "Requirements not met for recruitment."}
+    return None
+
+
+def validate_train_model(db: Session, player_id: int, projected_state: dict):
+    """Checks requirements using projected state."""
+    next_version = projected_state["model_version"] + 1
+    if next_version > 7:
+        return {"error": "Maximum Model Version reached."}
+
+    if projected_state["compute_level"] < next_version:
+        return {"error": f"Insufficient Compute Level. Need {next_version}."}
+
+    if projected_state["net_worth_level"] < MODEL_NET_WORTH_REQ.get(next_version, 0):
+        return {"error": "Net Worth too low for this Model Version."}
+    return None
+
+
+def validate_increase_net_worth(db: Session, player_id: int, projected_state: dict):
+    """Checks requirements using projected state."""
+    next_nw = projected_state["net_worth_level"] + 1
+
+    if next_nw > 2:
+        return {"error": "Already a Billionaire."}
+
+    costs = NET_WORTH_COSTS[next_nw]
+    if projected_state["corporate_funds"] < costs["money"]:
+        return {"error": f"Insufficient funds. Need ${costs['money']}."}
+    if (projected_state["reputation"] - costs["reputation"]) < -3:
+        return {"error": "Reputation too low."}
+    return None
+
+
+def validate_scale_presence(db: Session, player_id: int, projected_state: dict):
+    """Checks requirements for Scale Presence using projected state."""
+    current_presence = projected_state.get("presence_count", 1)
+    
+    # Check max presence? Map has 10 regions. Assuming max 10.
+    if current_presence >= 10:
+        return {"error": "Maximum presence reached."}
+    
+    # Cost Index: Presence 1 -> Next is 2. cost_idx = 2-2 = 0.
+    # Logic in frontend was: val-2. 
+    # Current presence 1. Next is 2. Cost is PRESENCE_COSTS[0].
+    # So index = current_presence - 1?
+    # Wait, PRESENCE_COSTS = [1, 3, 4...] (Cost for 2nd, 3rd...)
+    # If I have 1 presence, next is 2nd. Index 0. 
+    # So index = count - 1.
+    cost_idx = current_presence - 1
+    if cost_idx >= len(PRESENCE_COSTS):
+         # Fallback max cost?
+         cost = PRESENCE_COSTS[-1]
+    else:
+        cost = PRESENCE_COSTS[cost_idx]
+
+    if projected_state["corporate_funds"] < cost:
+        return {"error": f"Insufficient funds. Need ${cost}."}
+
+    return None
+
+
+def execute_buy_chips(db: Session, player_id: int):
+    """Resolves the Buy Chips action."""
+    # Note: Validation is done at placement time now, but we double-check or trust the state?
+    # For execution, we just execute on current state.
+    # The original function called validate_buy_chips.
+    # We should keep it safe. But validate_buy_chips now requires projected_state.
+    # In execution context, current state IS the projected state (roughly).
+    
+    player = db.get(Player, player_id)
+    mods = get_player_modifiers(db, player_id)
+    
+    # We can reconstruct the "current validation" by passing current state as projected
+    current_state = {
+        "compute_level": player.compute_level,
+        "corporate_funds": player.corporate_funds,
+        "net_worth_level": player.net_worth_level
+    }
+    error = validate_buy_chips(db, player_id, current_state)
+    if error:
+        return error
+
+    next_level = player.compute_level + 1
+    base_cost = COMPUTE_UPGRADE_COSTS.get(next_level)
+    final_cost = max(0, base_cost + mods["compute_cost_offset"])
 
     player.corporate_funds -= final_cost
     player.compute_level = next_level
@@ -314,6 +545,21 @@ def execute_scale_presence(db: Session, player_id: int, target_region: int):
     )
     if existing:
         return {"error": "Already present in this region."}
+
+    # Determine Cost and Deduct Funds
+    # Current count BEFORE adding this one
+    current_count = player.presence_count
+    cost_idx = current_count - 1
+    if cost_idx < 0: cost_idx = 0 # Should happen only if count 0?
+    if cost_idx >= len(PRESENCE_COSTS):
+        cost = PRESENCE_COSTS[-1]
+    else:
+        cost = PRESENCE_COSTS[cost_idx]
+
+    if player.corporate_funds < cost:
+        return {"error": f"Insufficient funds. Need ${cost}."}
+
+    player.corporate_funds -= cost
 
     current_region_ids = [
         p.region_id for p in db.query(Presence).filter_by(player_id=player_id).all()
@@ -577,6 +823,59 @@ def get_sorted_players(
     ]
 
 
+def validate_placement_count(db: Session, player_id: int, action_type: str, worker_number: int):
+    """Checks if placing another worker on this action exceeds allowed limits."""
+    # Count existing workers on this action, EXCLUDING the current worker if already there
+    existing_count = (
+        db.query(WorkerPlacement)
+        .filter(
+            WorkerPlacement.player_id == player_id,
+            WorkerPlacement.action_type == action_type,
+            WorkerPlacement.worker_number != worker_number,
+        )
+        .count()
+    )
+    current_total = existing_count + 1
+
+    # 1. Single-Worker Actions (Redundant/Invalid with >1)
+    # USER UPDATE: these are NOT restricted. Players can buy multiple chips/recruit multiple workers if they can afford it.
+    pass
+
+    # 2. Train Model (Limit to Requirement)
+    if action_type == "train_model":
+        player = db.get(Player, player_id)
+        next_version = player.model_version + 1
+        required = MODEL_WORKER_COSTS.get(next_version, 1)
+        if current_total > required:
+            return {"error": f"Only {required} worker(s) needed for Model v{next_version}."}
+
+    # 3. Raise Funds (Soft Cap at 3 for max efficiency, 4+ is wasted)
+    if action_type == "raise_funds":
+        if current_total > 3:
+            return {"error": "Max efficiency reached with 3 workers. Additional workers provide no benefit."}
+
+    return None
+
+def validate_action_requirements(db: Session, player_id: int, action_type: str, worker_number: int):
+    """Checks if the player meets the requirements for a proposed action, accounting for previous workers."""
+    
+    # Calculate projected state
+    projected_state = get_projected_player_state(db, player_id, worker_number)
+
+    if action_type == "buy_chips":
+        return validate_buy_chips(db, player_id, projected_state)
+    elif action_type == "recruit":
+        return validate_recruit(db, player_id, projected_state)
+    elif action_type == "train_model":
+        return validate_train_model(db, player_id, projected_state)
+    elif action_type == "increase_net_worth":
+        return validate_increase_net_worth(db, player_id, projected_state)
+    elif action_type == "scale_presence":
+        return validate_scale_presence(db, player_id, projected_state)
+    
+    return None
+
+
 def place_worker(db: Session, player_id: int, worker_number: int, action_type: str):
     """
     Validates and places (or updates) a worker on a specific action slot.
@@ -587,7 +886,17 @@ def place_worker(db: Session, player_id: int, worker_number: int, action_type: s
     if worker_number > player.total_workers:
         return {"error": f"Player only has {player.total_workers} workers."}
 
-    # 2. Upsert: Update if exists, otherwise create
+    # 2. Validation: Placement Limits (Count check)
+    count_error = validate_placement_count(db, player_id, action_type, worker_number)
+    if count_error:
+        return count_error
+
+    # 3. Validation: Does player meet the requirements for the action?
+    req_error = validate_action_requirements(db, player_id, action_type, worker_number)
+    if req_error:
+        return req_error
+
+    # 4. Upsert: Update if exists, otherwise create
     placement = (
         db.query(WorkerPlacement)
         .filter(

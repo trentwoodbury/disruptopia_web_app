@@ -63,6 +63,9 @@ class Player(Base):
     game: Mapped["Game"] = relationship(back_populates="players")
     # Link to components owned (like Presence Tokens or Cards)
     components: Mapped[List["Component"]] = relationship()
+    
+    # Presence Logic
+    presence: Mapped[List["Presence"]] = relationship("Presence", backref="player")
 
 
 class CardDetails(Base):

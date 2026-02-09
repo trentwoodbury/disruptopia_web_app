@@ -10,6 +10,7 @@ from backend.models import (
     CardDetails,
     RegionState,
     ReputationTile,
+    Presence,
 )
 from backend.enums import ZoneType, ComponentType, CardCategory
 
@@ -27,8 +28,6 @@ def seed_regions(db, game_id, player_count):
 def seed_reputation_tiles(db, game_id, player_count):
     # Determine how many tiles to pick for levels 1-3
     num_to_pick = 1 if player_count <= 3 else 2
-
-    # TO PREVENT FLAKY TESTS: Use a fixed seed for table selection if we are in a test context or just for consistency
     rng = random.Random(42)
 
     # 0 = Startup/Rep-3, 1 = Level 1, 2 = Level 2, 3 = Level 3
@@ -107,6 +106,13 @@ def seed_initial_game():
         player_count = 2
         seed_regions(db, new_game.id, player_count)
         seed_reputation_tiles(db, new_game.id, 2)
+
+        # SEED INITIAL PRESENCE
+        # Player 1 @ Region 1
+        db.add(Presence(player_id=p1.id, region_id=1))
+        # Player 2 @ Region 5
+        db.add(Presence(player_id=p2.id, region_id=5))
+        db.commit()
 
         # 3. Create Definitions and physical Components
         for data in CARD_LIBRARY:

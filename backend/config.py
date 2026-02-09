@@ -57,6 +57,20 @@ RECRUIT_COSTS = {
     8: {"money": 6, "min_nw": 2},  # Billionaire
 }
 
+# --- Presence Costs ---
+# Costs for the 1st, 2nd, 3rd... presence distinct token.
+# Note: Initial presence (capital) is usually free/setup. 
+# This list represents the cost for the Nth presence token *overall*? 
+# Or the cost for the *additional* tokens?
+# Based on dashboard:
+# Startup: 1 presence (Initial=1, next is 2).
+# Dashboard has [2] for Startup presence. Cost $1.
+# List provided: [1, 3, 4, 5, 6, 8, 10, 12, 14]
+# This likely maps to Presence Count: 2, 3, 4, 5...
+# Index 0 (Cost 1) -> Presence #2 (1st expansion).
+# Index 1 (Cost 3) -> Presence #3.
+PRESENCE_COSTS = [1, 3, 4, 5, 6, 8, 10, 12, 14]
+
 # Marketing Bonuses based on Net Worth Level
 # 0: Startup, 1: Millionaire, 2: Billionaire
 MARKETING_BONUSES = {
