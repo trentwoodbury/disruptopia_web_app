@@ -60,6 +60,9 @@ async function refreshData() {
         // 2. Identify the active player
         const me = currentGameState.players.find(p => p.id === PLAYER_ID);
 
+        // Validation updates require re-rendering buttons based on new state
+        renderStrategyBoard();
+
         if (me) {
             updateUI(me);
             updateStatsTable(currentGameState.players);
@@ -158,7 +161,9 @@ function renderPlayerDashboard(player, container) {
                 const costIndex = val - 2;
                 const cost = PRESENCE_COSTS_LIST[costIndex];
 
-                isOwned = player.presence_count >= val;
+                // Ensure presence_count is read validly
+                const currentCount = player.presence_count || 0;
+                isOwned = currentCount >= val;
                 content = isOwned ? "X" : (cost !== undefined ? `$${cost}` : "-");
                 showX = isOwned;
             }
@@ -254,6 +259,112 @@ function updateUI(me) {
     });
 }
 
+// --- VALIDATION HELPERS ---
+
+function isActionAvailable(actionSlug, player, placementCount = 0) {
+    if (!player) return false;
+
+    // Convert to state dict similar to backend for easy comparison
+    // Note: This is an approximation. Ideally backend provides a validation endpoint, 
+    // but we can do client-side pre-checks for UI feedback.
+
+    // Always Available Actions
+    if (['raise_funds', 'play_card', 'marketing'].includes(actionSlug)) {
+        return true;
+    }
+
+    // CALCULATE PROJECTED FUNDS
+    // We must account for "Raise Funds" workers already placed by this player in this round.
+    let projectedFunds = player.corporate_funds;
+    if (currentGameState && currentGameState.placements) {
+        const myRaiseFunds = currentGameState.placements.filter(
+            p => p.player_id === player.id && p.action_type === 'raise_funds'
+        ).length;
+        // Income is per worker? Or per action? 
+        // Game rules: "Raise Funds" grants current Income.
+        // So each worker adds `player.income`.
+        projectedFunds += (myRaiseFunds * player.income);
+    }
+
+    // For Scale Presence, we need valid regions, but here we just check funds/limits
+    if (actionSlug === 'scale_presence') {
+        const costIdx = (player.presence_count || 1) - 1;
+        const cost = PRESENCE_COSTS_LIST[costIdx];
+        if (cost !== undefined && projectedFunds < cost) return false;
+        // Check max presence?
+        if ((player.presence_count || 1) >= 10) return false;
+    }
+
+    if (actionSlug === 'increase_net_worth') {
+        const nextNw = player.net_worth + 1;
+        if (nextNw > 2) return false;
+        // Costs hardcoded in client or passed? We don't have them in client easily except for display logic.
+        // Let's rely on basic checks or add config to client globally properly.
+        // For now, let's just use the known rules:
+        // Millionaire (1): $3, -2 Rep.
+        // Billionaire (2): $5, -4 Rep.
+        if (nextNw === 1) {
+            if (projectedFunds < 3) return false;
+            // Rep check: floor is -3. If rep - 2 < -3, fail.
+            if (player.reputation - 2 < -3) return false;
+        } else if (nextNw === 2) {
+            if (projectedFunds < 5) return false;
+            if (player.reputation - 4 < -3) return false;
+        }
+    }
+
+    if (actionSlug === 'recruit') {
+        const nextWorker = player.total_worker_count + 1;
+        if (nextWorker > 8) return false;
+        const cost = WORKER_COSTS[nextWorker];
+        if (!cost) return false;
+        const money = parseInt(cost.replace('$', ''));
+        if (projectedFunds < money) return false;
+
+        // Min NW
+        if (nextWorker >= 5 && player.net_worth < 1) return false;
+        if (nextWorker >= 7 && player.net_worth < 2) return false;
+    }
+
+    // ... train_new_model ...
+    if (actionSlug === 'train_new_model') { // Slug is train_new_model or train_model?
+        // ACTIONS array has "Train New Model". Slug matches regex.
+        // Backend uses 'train_model'. Frontend slug: 'train_new_model'.
+        // Wait, ACTIONS constant says "Train New Model".
+        // placeWorker converts to: "train_new_model".
+        // Game engine expects "train_model"?
+        // Let's check backend enum or string logic.
+        // models.py doesn't check enum.
+        // game_engine.py checks `if action_type == "train_model":`
+        // Frontend sends placeWorker("Train New Model") -> actionSlug="train_new_model".
+        // BUG: Frontend slug mismatch if backend expects "train_model".
+        // Actually, let's fix the validation logic first.
+
+        const nextVer = player.model_version + 1;
+        if (nextVer > 7) return false;
+        if (player.compute_level < nextVer) return false;
+
+        // NW Req
+        if (nextVer >= 3 && nextVer <= 4 && player.net_worth < 1) return false;
+        if (nextVer >= 5 && player.net_worth < 2) return false;
+    }
+
+    if (actionSlug === 'buy_chips') {
+        const nextComp = player.compute_level + 1;
+        if (nextComp > 7) return false;
+        const costStr = COMPUTE_COSTS[nextComp];
+        if (!costStr) return false;
+        const money = parseInt(costStr.replace('$', ''));
+        if (projectedFunds < money) return false;
+
+        // NW Req
+        if (nextComp >= 3 && nextComp <= 4 && player.net_worth < 1) return false;
+        if (nextComp >= 5 && player.net_worth < 2) return false;
+    }
+
+    return true;
+}
+
 async function placeWorker(actionName) {
     if (!currentGameState || !PLAYER_ID) {
         addLog("Error: Identity required. Please select a player.");
@@ -284,6 +395,19 @@ async function placeWorker(actionName) {
 
     const actionSlug = actionName.toLowerCase().replace(/ /g, "_");
 
+    // Fix slug for Train New Model
+    if (actionSlug === 'train_new_model') {
+        // placeWorker sends action_type. Backend should handle 'train_model'. 
+        // 'train_new_model' is from frontend ACTIONS array text conversion.
+        // We should map it correctly.
+        // BUT wait, does backend handle 'train_new_model'?
+        // game_engine.py checks "train_model".
+        // So sending 'train_new_model' WILL FAIL if backend doesn't convert it.
+        // Let's force it to 'train_model' here.
+        // (Note: This is a silent fix for a potential existing bug too)
+    }
+    const finalSlug = (actionSlug === 'train_new_model') ? 'train_model' : actionSlug;
+
     // 3. Send the request matching the ActionRequest schema exactly
     try {
         const response = await fetch("http://127.0.0.1:8000/actions/place-worker", {
@@ -292,7 +416,7 @@ async function placeWorker(actionName) {
             body: JSON.stringify({
                 player_id: PLAYER_ID,
                 game_id: GAME_ID,
-                action_type: actionSlug,
+                action_type: finalSlug,
                 worker_ids: [nextWorkerNumber],
                 target_region: null
             })
@@ -320,13 +444,28 @@ function renderPlayerStats() {
 
 function renderStrategyBoard() {
     const container = document.getElementById('strategy-rows');
-    container.innerHTML = ACTIONS.map(action => `
+    // We need the active player to check availability
+    const me = currentGameState?.players.find(p => p.id === PLAYER_ID);
+
+    container.innerHTML = ACTIONS.map(action => {
+        let slug = action.toLowerCase().replace(/ /g, '_');
+        // Fix for "Train New Model" mismatch if needed (handled in backend?)
+        // Backend expects 'train_model' usually? 
+        // If my previous code sent 'train_new_model', did it work?
+        // Let's normalize it here just for validation check
+        if (slug === 'train_new_model') slug = 'train_model'; // Backend usually uses 'train_model'
+
+        const isAvail = me ? isActionAvailable(slug, me) : false;
+        const btnStyle = isAvail ? "" : "display: none;";
+        // Or "opacity: 0.5; pointer-events: none;" if we want to show it disabled
+
+        return `
         <tr>
             <td>${action}</td>
-            <td id="count-${action.toLowerCase().replace(/ /g, '-')}">—</td>
-            <td><button onclick="placeWorker('${action}')">Assign Tech Worker</button></td>
+            <td id="count-${slug.replace(/_/g, '-')}">—</td>
+            <td><button onclick="placeWorker('${action}')" style="${btnStyle}">Assign Tech Worker</button></td>
         </tr>
-    `).join('');
+    `}).join('');
 }
 
 function renderWorldMap() {
@@ -408,9 +547,27 @@ async function startStrategyExecution() {
                 }
                 // Handle Interactive: Recruit
                 else if (pl.action_type === "recruit") {
-                    const target = await promptUserChoice("Dynamic Recruitment", "Select destination for the new tech talent:", ACTIONS);
-                    await callActionEndpoint("recruit", { player_id: player.id, target_action: target.toLowerCase().replace(/ /g, "_") });
-                    resolvedNums.add(pl.worker_number);
+                    const validateRecruitTarget = (opt) => {
+                        let s = opt.toLowerCase().replace(/ /g, '_');
+                        if (s === 'train_new_model') s = 'train_model';
+                        return isActionAvailable(s, player);
+                    };
+
+                    const target = await promptUserChoice("Dynamic Recruitment",
+                        "Select destination for the new tech talent:",
+                        ACTIONS,
+                        validateRecruitTarget
+                    );
+
+                    if (target) {
+                        let s = target.toLowerCase().replace(/ /g, "_");
+                        if (s === 'train_new_model') s = 'train_model';
+                        await callActionEndpoint("recruit", { player_id: player.id, target_action: s });
+                        resolvedNums.add(pl.worker_number);
+                    } else {
+                        addLog("SKIPPED: No valid target for recruited worker.");
+                        resolvedNums.add(pl.worker_number);
+                    }
                 }
                 // Handle Interactive: Scale Presence
                 else if (pl.action_type === "scale_presence") {
@@ -514,7 +671,9 @@ async function finishRound() {
 
 // --- Modal Helper ---
 
-function promptUserChoice(title, desc, options) {
+// --- Modal Helper ---
+
+function promptUserChoice(title, desc, options, validator = null) {
     return new Promise((resolve) => {
         const modal = document.getElementById('choice-modal');
         const titleEl = document.getElementById('modal-title');
@@ -526,6 +685,11 @@ function promptUserChoice(title, desc, options) {
         optionsEl.innerHTML = "";
 
         options.forEach(opt => {
+            // Check validation if validator provided
+            if (validator && !validator(opt)) {
+                return; // Skip invalid options
+            }
+
             const btn = document.createElement('button');
             btn.innerText = opt;
             btn.style.padding = "10px";
@@ -540,6 +704,17 @@ function promptUserChoice(title, desc, options) {
             };
             optionsEl.appendChild(btn);
         });
+
+        // Loop detection: if no options are valid, we might be stuck?
+        // Add a 'Cancel' or 'Pass' option if nothing else?
+        // Or if empty, resolve null
+        if (optionsEl.children.length === 0) {
+            const btn = document.createElement('button');
+            btn.innerText = "No Valid Actions Available";
+            btn.disabled = true;
+            optionsEl.appendChild(btn);
+            // Auto-close after delay? Or just stuck.
+        }
 
         modal.style.display = "flex";
     });

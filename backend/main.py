@@ -155,6 +155,7 @@ def get_game_state(game_id: int, db: Session = Depends(get_db)):
                 "subsidy_tokens": p.subsidy_tokens,
                 "corporate_funds": p.corporate_funds,
                 "personal_funds": p.personal_funds,
+                "presence_count": p.presence_count,
                 "presence_regions": [pres.region_id for pres in p.presence],
             }
             for p in players
