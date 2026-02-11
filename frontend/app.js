@@ -25,6 +25,14 @@ const WORLD_MAP = {
     10: [5, 9],
 };
 
+const PLAYER_COLORS = {
+    1: "#ff0000",
+    2: "#ffffff",
+    3: "#ffff00",
+    4: "#0000ff",
+    5: "#ffc0cb"
+};
+
 // This variable will store the latest state from the server
 let currentGameState = null;
 
@@ -452,28 +460,27 @@ async function placeWorker(actionName) {
 
     let targetRegion = null;
     if (actionSlug === 'scale_presence') {
-        const myPresence = [...me.presence_regions];
+        const myPresence = new Set([...me.presence_regions]);
+
         // Add pending expansions from currentGameState
         currentGameState.placements
             .filter(p => p.player_id === PLAYER_ID && p.action_type === 'scale_presence' && p.target_region)
             .forEach(p => {
-                if (!myPresence.includes(p.target_region)) {
-                    myPresence.push(p.target_region);
-                }
+                myPresence.add(p.target_region);
             });
 
-        // Adjacency Check: Any region adjacent to current presence not already occupied by us
-        const candidates = new Set();
+        // Adjacency Check: Any region adjacent to ANY OF our current or pending presence
+        const neighbors = new Set();
         myPresence.forEach(rId => {
             const adj = WORLD_MAP[rId] || [];
             adj.forEach(aId => {
-                if (!myPresence.includes(aId)) {
-                    candidates.add(aId);
+                if (!myPresence.has(aId)) {
+                    neighbors.add(aId);
                 }
             });
         });
 
-        const playerOptions = Array.from(candidates).map(id => REGIONS[id - 1]).sort();
+        const playerOptions = Array.from(neighbors).map(id => REGIONS[id - 1]).sort();
         if (playerOptions.length === 0) {
             addLog("Error: No adjacent regions available for expansion.");
             showErrorModal("Scale Presence", "No adjacent regions available to expand into.");
@@ -577,23 +584,61 @@ function renderStrategyBoard() {
 }
 
 function renderWorldMap() {
-    const container = document.getElementById('world-rows');
-    if (!container || !currentGameState) return;
+    const overlay = document.getElementById('presence-overlay');
+    if (!overlay || !currentGameState) return;
 
-    container.innerHTML = REGIONS.map((name, index) => {
-        const regionId = index + 1;
-        const region = currentGameState.regions?.find(r => r.id === regionId);
-        const presence = region ? region.presence_players.join(", ") : "—";
-        const subsidies = region ? region.subsidy_tokens : 0;
+    overlay.innerHTML = ''; // Clear existing bubbles
 
-        return `
-            <tr>
-                <td>${name}</td>
-                <td id="subsidy-${regionId}">${subsidies}</td>
-                <td>${presence || "—"}</td>
-            </tr>
-        `;
-    }).join('');
+    const regionLayout = [
+        // Top Row (IDs 1-5, left to right)
+        { id: 1, x: 5, y: 5 }, // North America / Arctic
+        { id: 2, x: 25, y: 5 }, // North Atlantic / Greenland
+        { id: 3, x: 40, y: 5 }, // Europe / North Africa
+        { id: 4, x: 60, y: 5 }, // Northern Asia
+        { id: 5, x: 80, y: 5 }, // NE Asia / Pacific
+
+        // Bottom Row (IDs 6-10, left to right)
+        { id: 6, x: 5, y: 50 }, // South Pacific / West Americas
+        { id: 7, x: 25, y: 50 }, // South America
+        { id: 8, x: 40, y: 50 }, // Africa / South Atlantic
+        { id: 9, x: 60, y: 50 }, // SE Asia / Indian Ocean
+        { id: 10, x: 80, y: 50 } // Australia / Oceania
+    ];
+
+    regionLayout.forEach(layout => {
+        const region = currentGameState.regions?.find(r => r.id === layout.id);
+        if (!region || !region.presence_players) return;
+
+        // Create a wrapper for this region's markers
+        const markerContainer = document.createElement('div');
+        markerContainer.className = 'region-marker';
+        markerContainer.style.left = `${layout.x}%`;
+        markerContainer.style.top = `${layout.y}%`;
+
+        region.presence_players.forEach(playerName => {
+            // Find player number from name "Player X" or "Player One"
+            // Actually, the backend sends names like "Player One". 
+            // We need the player ID to get the color.
+            // Let's find the player object.
+            const playerObj = currentGameState.players.find(p => p.name === playerName);
+            if (!playerObj) return;
+
+            const bubble = document.createElement('div');
+            bubble.className = 'presence-bubble';
+            bubble.innerText = `PLAYER ${playerObj.id}`; // Full text as requested
+            bubble.style.backgroundColor = PLAYER_COLORS[playerObj.id] || "#888";
+            // If background is white or yellow, text should be black; else white? 
+            // The user wanted a bubble matching player's color.
+            if ([2, 3].includes(playerObj.id)) {
+                bubble.style.color = "#000";
+            } else {
+                bubble.style.color = "#fff";
+            }
+            markerContainer.appendChild(bubble);
+        });
+
+        overlay.appendChild(markerContainer);
+    });
 }
 
 // --- Strategy Execution Loop ---
@@ -691,20 +736,25 @@ async function startStrategyExecution() {
                     let rId = pl.target_region;
 
                     if (!rId) {
-                        const currentRegions = player.presence_regions || [];
-                        const neighborIds = new Set();
+                        // RE-FETCH the latest player state to avoid stale data during resolution
+                        const latestPlayer = currentGameState.players.find(p => p.id === player.id);
+                        const currentRegions = new Set(latestPlayer?.presence_regions || []);
+                        const neighbors = new Set();
 
-                        if (currentRegions.length === 0) {
-                            [1, 2, 3, 4, 5, 6, 7, 8, 9, 10].forEach(n => neighborIds.add(n));
+                        if (currentRegions.size === 0) {
+                            [1, 2, 3, 4, 5, 6, 7, 8, 9, 10].forEach(n => neighbors.add(n));
                         } else {
                             currentRegions.forEach(rId => {
-                                const neighbors = WORLD_MAP[rId] || [];
-                                neighbors.forEach(n => neighborIds.add(n));
+                                const adj = WORLD_MAP[rId] || [];
+                                adj.forEach(n => {
+                                    if (!currentRegions.has(n)) {
+                                        neighbors.add(n);
+                                    }
+                                });
                             });
-                            currentRegions.forEach(rId => neighborIds.delete(rId));
                         }
 
-                        const availableRegions = REGIONS.filter((name, idx) => neighborIds.has(idx + 1));
+                        const availableRegions = REGIONS.filter((name, idx) => neighbors.has(idx + 1));
 
                         if (availableRegions.length === 0) {
                             addLog(`SKIPPED: No valid adjacent regions for expansion.`);

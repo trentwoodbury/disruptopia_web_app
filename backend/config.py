@@ -79,6 +79,14 @@ MARKETING_BONUSES = {
     2: {"reputation": 0, "power": 2},
 }
 
+PLAYER_COLORS = {
+    1: "#ff0000",  # Red
+    2: "#ffffff",  # White
+    3: "#ffff00",  # Yellow
+    4: "#0000ff",  # Blue
+    5: "#ffc0cb",  # Pink
+}
+
 REPUTATION_TILE_POOL = {
     0: [
         {"name": "Inefficient R&D", "effect": "model_cost_plus_1"},

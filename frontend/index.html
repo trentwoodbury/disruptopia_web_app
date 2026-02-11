@@ -97,7 +97,7 @@
 
 <body>
 
-    <h1>DISRUPTOPIA // ROOT_ACCESS</h1>
+    <h1>DISRUPTOPIA</h1>
 
     <div class="stats">
         <div style="grid-column: span 2;">
@@ -176,22 +176,45 @@
             </div>
         </section>
 
-        <section>
-            <h2>WORLD MAP (Presence)</h2>
-            <table>
-                <thead>
-                    <tr>
-                        <th>Region</th>
-                        <th>Subsidy Tokens</th>
-                        <th>Presence</th>
-                    </tr>
-                </thead>
-                <tbody id="world-rows"></tbody>
-            </table>
+        <section id="world-map-section" style="grid-column: span 2;">
+            <h2>WORLD MAP</h2>
+            <div id="world-map-wrapper"
+                style="position: relative; width: 100%; max-width: 1000px; margin: 0 auto; line-height: 0;">
+                <img src="WorldMap.png" alt="World Map" style="width: 100%; height: auto; border: 1px solid #00ff41;">
+                <div id="presence-overlay"
+                    style="position: absolute; top: 0; left: 0; width: 100%; height: 100%; pointer-events: none;">
+                    <!-- Presence bubbles will be injected here -->
+                </div>
+            </div>
+            <style>
+                .presence-bubble {
+                    position: absolute;
+                    padding: 4px 10px;
+                    border-radius: 12px;
+                    font-size: 0.75rem;
+                    font-weight: bold;
+                    color: black;
+                    transform: translate(-50%, -50%);
+                    box-shadow: 0 2px 4px rgba(0, 0, 0, 0.5);
+                    border: 1px solid #333;
+                    white-space: nowrap;
+                    z-index: 10;
+                }
+
+                .region-marker {
+                    position: absolute;
+                    width: 20%;
+                    height: 50%;
+                    display: flex;
+                    flex-direction: column;
+                    align-items: center;
+                    justify-content: center;
+                    gap: 5px;
+                }
+            </style>
         </section>
     </div>
 
-    <!-- Execute button moved to Strategy section -->
 
     <section id="log-section">
         <h2>TERMINAL LOG</h2>
