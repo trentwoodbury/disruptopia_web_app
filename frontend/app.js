@@ -273,17 +273,23 @@ function isActionAvailable(actionSlug, player, placementCount = 0) {
         return true;
     }
 
-    // CALCULATE PROJECTED FUNDS
-    // We must account for "Raise Funds" workers already placed by this player in this round.
+    // CALCULATE PROJECTED STATE
     let projectedFunds = player.corporate_funds;
+    let projectedCompute = player.compute_level || 1;
+    let projectedTotalWorkers = player.total_worker_count || 3;
+
     if (currentGameState && currentGameState.placements) {
-        const myRaiseFunds = currentGameState.placements.filter(
-            p => p.player_id === player.id && p.action_type === 'raise_funds'
-        ).length;
-        // Income is per worker? Or per action? 
-        // Game rules: "Raise Funds" grants current Income.
-        // So each worker adds `player.income`.
-        projectedFunds += (myRaiseFunds * player.income);
+        const myPlacements = currentGameState.placements.filter(p => p.player_id === player.id);
+
+        // projectedFunds += (myRaiseFunds * player.income);
+        const myRaiseFunds = myPlacements.filter(p => p.action_type === 'raise_funds').length;
+        projectedFunds += (myRaiseFunds * (player.income || 3));
+
+        // projectedCompute
+        projectedCompute += myPlacements.filter(p => p.action_type === 'buy_chips').length;
+
+        // projectedTotalWorkers
+        projectedTotalWorkers += myPlacements.filter(p => p.action_type === 'recruit').length;
     }
 
     // For Scale Presence, we need valid regions, but here we just check funds/limits
@@ -361,11 +367,11 @@ function isActionAvailable(actionSlug, player, placementCount = 0) {
 
         // Requirement Check: Enough Workers Left?
         const placedCount = currentGameState.placements.filter(p => p.player_id === PLAYER_ID).length;
-        const availableWorkers = player.total_worker_count - placedCount;
+        const availableWorkers = projectedTotalWorkers - placedCount;
         if (availableWorkers < reqWorkers) return false;
 
         // Requirement Check: Compute and Net Worth
-        if (player.compute_level < nextTargetV) return false;
+        if (projectedCompute < nextTargetV) return false;
         if (nextTargetV >= 3 && nextTargetV <= 4 && player.net_worth < 1) return false;
         if (nextTargetV >= 5 && player.net_worth < 2) return false;
     }
@@ -426,7 +432,12 @@ async function placeWorker(actionName) {
 
     // 2. Find the required number of available worker numbers
     let workersToPlace = [];
-    for (let i = 1; i <= me.total_worker_count; i++) {
+    const myRecruits = currentGameState.placements.filter(
+        p => p.player_id === PLAYER_ID && p.action_type === 'recruit'
+    ).length;
+    const projectedTotalWorkers = me.total_worker_count + myRecruits;
+
+    for (let i = 1; i <= projectedTotalWorkers; i++) {
         if (!usedNumbers.includes(i)) {
             workersToPlace.push(i);
             if (workersToPlace.length === workersToPlaceCount) break;

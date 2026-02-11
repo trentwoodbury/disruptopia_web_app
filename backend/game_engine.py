@@ -882,11 +882,14 @@ def place_worker(db: Session, player_id: int, worker_number: int, action_type: s
     """
     player = db.get(Player, player_id)
 
-    # 1. Validation: Does player own this worker?
-    if worker_number > player.total_workers:
-        return {"error": f"Player only has {player.total_workers} workers."}
+    # 1. Calculate projected state to handle "future" workers from recruitment
+    projected_state = get_projected_player_state(db, player_id, worker_number)
 
-    # 2. Validation: Placement Limits (Count check)
+    # 2. Validation: Does player own this worker (or will they?)
+    if worker_number > projected_state["total_workers"]:
+        return {"error": f"Player only has {player.total_workers} workers (projected: {projected_state['total_workers']})."}
+
+    # 3. Validation: Placement Limits (Count check)
     count_error = validate_placement_count(db, player_id, action_type, worker_number)
     if count_error:
         return count_error

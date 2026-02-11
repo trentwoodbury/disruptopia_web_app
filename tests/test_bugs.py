@@ -79,20 +79,15 @@ def test_train_model_multi_worker_placement(page: Page, api_server):
     # Need NW 1 for Compute 3+.
     requests.post(f"{api_server}/actions/execute/marketing?player_id=1")
     requests.post(f"{api_server}/actions/execute/increase-net-worth?player_id=1")
-    requests.post(f"{api_server}/actions/execute/raise-funds", json={"player_id": 1, "chunks": [1, 1]})
-    requests.post(f"{api_server}/actions/execute/raise-funds", json={"player_id": 1, "chunks": [1, 1]})
+    requests.post(f"{api_server}/actions/execute/raise-funds", json={"player_id": 1, "chunks": [1, 1, 1]})
     
     # Upgrade Compute to 3
-    for i in range(2):
-        res = requests.post(f"{api_server}/actions/execute/buy-chips?player_id=1")
-        if res.status_code != 200:
-            print(f"DEBUG: buy-chips failed: {res.status_code} - {res.text}")
+    requests.post(f"{api_server}/actions/execute/buy-chips?player_id=1") # C2
+    requests.post(f"{api_server}/actions/execute/buy-chips?player_id=1") # C3
     
     # Train to v2
-    for i in range(2):
-        res = requests.post(f"{api_server}/actions/execute/train-model?player_id=1&worker_count=1")
-        if res.status_code != 200:
-            print(f"DEBUG: train-model failed: {res.status_code} - {res.text}")
+    requests.post(f"{api_server}/actions/execute/train-model?player_id=1&worker_count=1") # v1
+    requests.post(f"{api_server}/actions/execute/train-model?player_id=1&worker_count=1") # v2
     
     page.goto(api_server)
     page.wait_for_selector("#player-select option[value='1']", state="attached")
@@ -101,9 +96,8 @@ def test_train_model_multi_worker_placement(page: Page, api_server):
     # Verify we are at v2 via state probe
     page.wait_for_timeout(1000)
     state = page.evaluate("currentGameState.players.find(p => p.id === 1)")
-    print(f"DEBUG: Final State - Model: {state['model_version']}, Compute: {state['compute_level']}")
     assert state['model_version'] == 2
-    assert state['compute_level'] >= 2 # Changed to 2 if 3 fails
+    assert state['compute_level'] >= 3
     
     train_model_row = page.locator("tr:has-text('Train New Model')")
     button = train_model_row.get_by_role("button", name="Assign Tech Worker")
@@ -118,42 +112,228 @@ def test_train_model_button_disappears_if_insufficient_workers(page: Page, api_s
     """Verify that Train New Model button disappears if not enough workers remain."""
     requests.post(f"{api_server}/game/reset")
     
+    # Needs C3 and v2.
     requests.post(f"{api_server}/actions/execute/marketing?player_id=1")
     requests.post(f"{api_server}/actions/execute/increase-net-worth?player_id=1")
-    requests.post(f"{api_server}/actions/execute/raise-funds", json={"player_id": 1, "chunks": [1, 1]})
-    requests.post(f"{api_server}/actions/execute/raise-funds", json={"player_id": 1, "chunks": [1, 1]})
-    requests.post(f"{api_server}/actions/execute/buy-chips?player_id=1") 
-    requests.post(f"{api_server}/actions/execute/train-model?player_id=1&worker_count=1")
-    requests.post(f"{api_server}/actions/execute/train-model?player_id=1&worker_count=1")
+    requests.post(f"{api_server}/actions/execute/raise-funds", json={"player_id": 1, "chunks": [1, 1, 1]})
+    requests.post(f"{api_server}/actions/execute/buy-chips?player_id=1") # c2
+    requests.post(f"{api_server}/actions/execute/buy-chips?player_id=1") # c3
+    requests.post(f"{api_server}/actions/execute/train-model?player_id=1&worker_count=1") # v1
+    requests.post(f"{api_server}/actions/execute/train-model?player_id=1&worker_count=1") # v2
     
     page.goto(api_server)
     page.wait_for_selector("#player-select option[value='1']", state="attached")
     page.select_option("#player-select", "1")
     
-    # Total workers: 3.
-    # Place 2 workers on "Buy Chips"
-    buy_chips_row = page.locator("tr:has-text('Buy Chips')")
-    buy_chips_btn = buy_chips_row.get_by_role("button", name="Assign Tech Worker")
+    # Total workers: 3. v3 requires 2.
+    # Initially visible (3 > 2).
+    train_model_row = page.locator("tr:has-text('Train New Model')")
+    train_button = train_model_row.get_by_role("button", name="Assign Tech Worker")
+    expect(train_button).to_be_visible()
     
-    # Wait for table to render
-    expect(buy_chips_btn).to_be_visible()
-    
-    buy_chips_btn.click()
+    # Place 2 workers on "Marketing"
+    marketing_row = page.locator("tr:has-text('Marketing')")
+    m_btn = marketing_row.get_by_role("button", name="Assign Tech Worker")
+    m_btn.click() # Worker 1
     page.wait_for_timeout(500)
-    buy_chips_btn.click()
-    page.wait_for_timeout(1000) # Wait for state sync
+    m_btn.click() # Worker 2
+    page.wait_for_timeout(1000)
     
-    # Train New Model (v2) cost 1. (Wait, let's go to v3 so cost is 2)
-    # v2 -> v3 requires 2. Only 1 left.
-    # But wait, my setup above only reached v2.
-    # To reach v3 in setup, I need Compute 3.
-    # Let's just assume we want the button to disappear if available workers < cost.
+    # Left: 1 worker. Needs 2. Hide.
+    expect(train_button).not_to_be_visible()
+
+def test_train_model_projected_compute(page: Page, api_server):
+    """Verify Train New Model becomes available if Compute upgrade is pending."""
+    requests.post(f"{api_server}/game/reset")
+    
+    # Setup: Model 2, Compute 2. Millionaire.
+    # We need NW1 for C3.
+    requests.post(f"{api_server}/actions/execute/marketing?player_id=1")
+    requests.post(f"{api_server}/actions/execute/increase-net-worth?player_id=1")
+    requests.post(f"{api_server}/actions/execute/buy-chips?player_id=1") # C2
+    requests.post(f"{api_server}/actions/execute/train-model?player_id=1&worker_count=1") # v1
+    requests.post(f"{api_server}/actions/execute/train-model?player_id=1&worker_count=1") # v2
+    
+    # Give money for C3
+    requests.post(f"{api_server}/actions/execute/raise-funds", json={"player_id": 1, "chunks": [1, 1]})
+    
+    page.goto(api_server)
+    page.wait_for_selector("#player-select option[value='1']", state="attached")
+    page.select_option("#player-select", "1")
     
     train_model_row = page.locator("tr:has-text('Train New Model')")
-    button = train_model_row.get_by_role("button", name="Assign Tech Worker")
+    train_button = train_model_row.get_by_role("button", name="Assign Tech Worker")
     
-    # If cost is 1 (for v1) and 1 worker left, it's visible.
-    # So I MUST be at v2 so cost is 2.
-    # I already found that C3 failed, so maybe that's why it's visible.
+    # Initially hidden because Compute is 2, need 3 for v3.
+    expect(train_button).not_to_be_visible()
     
-    expect(button).not_to_be_visible()
+    # Place worker on Buy Chips
+    buy_chips_row = page.locator("tr:has-text('Buy Chips')")
+    buy_chips_btn = buy_chips_row.get_by_role("button", name="Assign Tech Worker")
+    buy_chips_btn.click()
+    
+    # Now Train New Model should be visible
+    expect(train_button).to_be_visible()
+
+def test_train_model_projected_workers(page: Page, api_server):
+    """Verify Train New Model becomes available if Recruitment is pending."""
+    requests.post(f"{api_server}/game/reset")
+    
+    # Setup: Model 2, Compute 3. Workers 3.
+    requests.post(f"{api_server}/actions/execute/marketing?player_id=1")
+    requests.post(f"{api_server}/actions/execute/increase-net-worth?player_id=1")
+    requests.post(f"{api_server}/actions/execute/raise-funds", json={"player_id": 1, "chunks": [1, 1, 1]})
+    requests.post(f"{api_server}/actions/execute/buy-chips?player_id=1") # C2
+    requests.post(f"{api_server}/actions/execute/buy-chips?player_id=1") # C3
+    requests.post(f"{api_server}/actions/execute/train-model?player_id=1&worker_count=1") # v1
+    requests.post(f"{api_server}/actions/execute/train-model?player_id=1&worker_count=1") # v2
+    
+    page.goto(api_server)
+    page.select_option("#player-select", "1")
+    
+    train_model_row = page.locator("tr:has-text('Train New Model')")
+    train_button = train_model_row.get_by_role("button", name="Assign Tech Worker")
+    
+    # v3 requires 2 workers. Only 3 total workers, all unplaced. Available: 3.
+    # Wait, it SHOULD be visible initially because 3 > 2.
+    # Let's place 2 workers elsewhere.
+    marketing_row = page.locator("tr:has-text('Marketing')")
+    m_btn = marketing_row.get_by_role("button", name="Assign Tech Worker")
+    m_btn.click()
+    page.wait_for_timeout(500)
+    m_btn.click()
+    page.wait_for_timeout(500)
+    
+    # Now 1 worker left. Train Model (v3) requires 2. Button should hide.
+    expect(train_button).not_to_be_visible()
+    
+    # Now place a worker on Recruit (needs NW1 which we have).
+    # Worker 3 is the only one left.
+    recruit_row = page.locator("tr:has-text('Recruit')")
+    r_btn = recruit_row.get_by_role("button", name="Assign Tech Worker")
+    r_btn.click() # Placed worker 3 on Recruit. Remaining: 0 real, 1 projected (worker 4). Total avail: 1.
+    
+    # Still not enough? Wait. 
+    # Current placements: M1, M2, R3. Total: 3.
+    # Projected total: 4.
+    # Available for Train: projected(4) - unplaced(0) ... no.
+    # availableWorkers = projectedTotalWorkers - placedCount.
+    # placedCount = 3. projectedTotalWorkers = 4. available = 1.
+    # Still not enough for v3 (requires 2).
+    
+    # Let's undo one marketing.
+    # Actually, let's just place only 1 on marketing.
+    # Placement 1: Marketing.
+    # Remaining: 2 real. 
+    # Action Train (needs 2) -> available.
+    
+    # OK, let's restart the scenario.
+    requests.post(f"{api_server}/game/reset")
+    requests.post(f"{api_server}/actions/execute/marketing?player_id=1")
+    requests.post(f"{api_server}/actions/execute/increase-net-worth?player_id=1")
+    requests.post(f"{api_server}/actions/execute/raise-funds", json={"player_id": 1, "chunks": [1, 1, 1]})
+    requests.post(f"{api_server}/actions/execute/buy-chips?player_id=1") # C2
+    requests.post(f"{api_server}/actions/execute/buy-chips?player_id=1") # C3
+    requests.post(f"{api_server}/actions/execute/train-model?player_id=1&worker_count=1") # v1
+    requests.post(f"{api_server}/actions/execute/train-model?player_id=1&worker_count=1") # v2
+    
+    page.goto(api_server)
+    page.select_option("#player-select", "1")
+    
+    # Place 2 workers on Marketing.
+    m_btn.click()
+    page.wait_for_timeout(500)
+    m_btn.click()
+    page.wait_for_timeout(500)
+    # Available: 1. Hide Train.
+    expect(train_button).not_to_be_visible()
+    
+    # Recruit.
+    r_btn.click()
+    # Available: 1 real + 1 projected = 2. 
+    # BUT worker 3 is ALREADY placed on Recruit.
+    # So availableWorkers = 4 (projected) - 3 (placed) = 1.
+    # STILL 1. 
+    # Ah! If worker 3 is on Recruit, it produces worker 4.
+    # So I have worker 4 available.
+    # But Train needs 2. 
+    
+    # Let's make it simpler:
+    # 3 workers total. v1->v2 (cost 1).
+    # Current: v0.
+    # Place 3 workers on Marketing.
+    # Available: 0. Train hidden.
+    # Place 1 on Recruit (oops, no workers left).
+    
+    # Scenario:
+    # 3 workers. v3 requires 2.
+    # Place 1 on Recruit.
+    # Now I have 2 workers left (2, 3) PLUS projected 1 (4). Total available: 3.
+    # NO. Workers 2 and 3 are REAL. Worker 4 is FUTURE.
+    # If I place 2 and 3 on something else, I have 1 projected left.
+    
+    # Let's use the USER's example:
+    # "worker 1 is on recruit, workers 2 and 3 are on Train... 3 required"
+    # Cost 3. Workers 1, 2, 3 used. Worker 4 from recruit will be used for Train.
+    # Available = 4 (proj) - 3 (placed) = 1.
+    # If I click Train, it should take workers 2, 3 (already there?) No.
+    
+    # Interaction:
+    # 1. Place worker 1 on Recruit.
+    # 2. Assign balance to Train Model.
+    
+    # Let's try:
+    # 3 workers. Cost for next model is 2.
+    # Place 2 workers on Marketing.
+    # 1 worker left. Train hidden.
+    # Place worker 3 on Recruit.
+    # Now projected total is 4. Placed is 3. 
+    # Available is 1. Still hidden.
+    
+    # WAIT. If I place worker 2 on Recruit.
+    # Placed: 1(M), 2(R). Total 2 placed.
+    # Projected total: 4.
+    # Available: 4 - 2 = 2.
+    # Train (needs 2) should be VISIBLE.
+    
+    # Let's test this.
+    requests.post(f"{api_server}/game/reset")
+    requests.post(f"{api_server}/actions/execute/marketing?player_id=1")
+    requests.post(f"{api_server}/actions/execute/increase-net-worth?player_id=1")
+    requests.post(f"{api_server}/actions/execute/raise-funds", json={"player_id": 1, "chunks": [1, 1, 1]})
+    requests.post(f"{api_server}/actions/execute/buy-chips?player_id=1") # C2
+    requests.post(f"{api_server}/actions/execute/buy-chips?player_id=1") # C3
+    requests.post(f"{api_server}/actions/execute/train-model?player_id=1&worker_count=1") # v1
+    requests.post(f"{api_server}/actions/execute/train-model?player_id=1&worker_count=1") # v2
+    
+    page.goto(api_server)
+    page.select_option("#player-select", "1")
+    
+    marketing_row = page.locator("tr:has-text('Marketing')")
+    m_btn = marketing_row.get_by_role("button", name="Assign Tech Worker")
+    m_btn.click() # Worker 1
+    page.wait_for_timeout(500)
+    
+    # Now 2 workers left (2, 3). Train (needs 2) is VISIBLE.
+    expect(train_button).to_be_visible()
+    
+    # Place worker 2 on Recruit.
+    recruit_row = page.locator("tr:has-text('Recruit')")
+    r_btn = recruit_row.get_by_role("button", name="Assign Tech Worker")
+    r_btn.click() # Worker 2
+    page.wait_for_timeout(500)
+    
+    # Placements: M1, R2. Total 2.
+    # Projected total: 4.
+    # Available: 4 - 2 = 2.
+    # Train (needs 2) should be VISIBLE.
+    expect(train_button).to_be_visible()
+    
+    # Click Train Model.
+    train_button.click()
+    
+    # Should assign workers 3 and 4!
+    count_cell = page.locator("#count-train-new-model")
+    page.wait_for_timeout(1000)
+    expect(count_cell).to_have_text("3, 4")
+
