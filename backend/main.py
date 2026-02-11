@@ -81,6 +81,7 @@ async def place_worker(req: schemas.ActionRequest, db: Session = Depends(get_db)
             player_id=req.player_id,
             worker_number=worker_id,
             action_type=req.action_type,
+            target_region=req.target_region
         )
         if "error" in last_result:
             raise HTTPException(status_code=400, detail=last_result["error"])
@@ -126,6 +127,21 @@ def get_leaderboard(game_id: int, db: Session = Depends(get_db)):
 @app.get("/game/{game_id}/state")
 def get_game_state(game_id: int, db: Session = Depends(get_db)):
     players = db.query(models.Player).filter(models.Player.game_id == game_id).all()
+    # Regions presence mapping
+    region_states = db.query(models.RegionState).filter(models.RegionState.game_id == game_id).all()
+    region_data = []
+    for r_id in range(1, 11):
+        rs = next((r for r in region_states if r.region_id == r_id), None)
+        presence = []
+        for p in players:
+            if r_id in [pres.region_id for pres in p.presence]:
+                presence.append(p.user_name)
+        
+        region_data.append({
+            "id": r_id,
+            "subsidy_tokens": rs.subsidy_tokens_remaining if rs else 0,
+            "presence_players": presence
+        })
 
     return {
         "game_id": game_id,
@@ -154,11 +170,13 @@ def get_game_state(game_id: int, db: Session = Depends(get_db)):
                 "player_id": pl.player_id,
                 "action_type": pl.action_type,
                 "worker_number": pl.worker_number,
+                "target_region": pl.target_region
             }
             for pl in db.query(models.WorkerPlacement)
             .filter(models.WorkerPlacement.game_id == game_id)
             .all()
         ],
+        "regions": region_data
     }
 
 

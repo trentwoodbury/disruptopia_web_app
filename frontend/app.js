@@ -66,6 +66,7 @@ async function refreshData() {
         if (me) {
             updateUI(me);
             updateStatsTable(currentGameState.players);
+            renderWorldMap();
         } else {
             document.getElementById('user-name').innerText = "NOT_SELECTED";
             addLog("System: Please select an identity from the ACT_AS menu.");
@@ -449,6 +450,42 @@ async function placeWorker(actionName) {
         return;
     }
 
+    let targetRegion = null;
+    if (actionSlug === 'scale_presence') {
+        const myPresence = [...me.presence_regions];
+        // Add pending expansions from currentGameState
+        currentGameState.placements
+            .filter(p => p.player_id === PLAYER_ID && p.action_type === 'scale_presence' && p.target_region)
+            .forEach(p => {
+                if (!myPresence.includes(p.target_region)) {
+                    myPresence.push(p.target_region);
+                }
+            });
+
+        // Adjacency Check: Any region adjacent to current presence not already occupied by us
+        const candidates = new Set();
+        myPresence.forEach(rId => {
+            const adj = WORLD_MAP[rId] || [];
+            adj.forEach(aId => {
+                if (!myPresence.includes(aId)) {
+                    candidates.add(aId);
+                }
+            });
+        });
+
+        const playerOptions = Array.from(candidates).map(id => REGIONS[id - 1]).sort();
+        if (playerOptions.length === 0) {
+            addLog("Error: No adjacent regions available for expansion.");
+            showErrorModal("Scale Presence", "No adjacent regions available to expand into.");
+            return;
+        }
+
+        const choice = await promptUserChoice("Expand Presence", "Select a region to expand into:", playerOptions);
+        if (!choice) return;
+
+        targetRegion = REGIONS.indexOf(choice) + 1;
+    }
+
     // 3. Send the request matching the ActionRequest schema exactly
     try {
         const response = await fetch("http://127.0.0.1:8000/actions/place-worker", {
@@ -459,7 +496,7 @@ async function placeWorker(actionName) {
                 game_id: GAME_ID,
                 action_type: actionSlug,
                 worker_ids: workersToPlace,
-                target_region: null
+                target_region: targetRegion
             })
         });
 
@@ -541,13 +578,22 @@ function renderStrategyBoard() {
 
 function renderWorldMap() {
     const container = document.getElementById('world-rows');
-    container.innerHTML = REGIONS.map((name, index) => `
-        <tr>
-            <td>${name}</td>
-            <td id="subsidy-${index + 1}">0</td>
-            <td><button onclick="addPresence(${index + 1})">Deploy Presence</button></td>
-        </tr>
-    `).join('');
+    if (!container || !currentGameState) return;
+
+    container.innerHTML = REGIONS.map((name, index) => {
+        const regionId = index + 1;
+        const region = currentGameState.regions?.find(r => r.id === regionId);
+        const presence = region ? region.presence_players.join(", ") : "—";
+        const subsidies = region ? region.subsidy_tokens : 0;
+
+        return `
+            <tr>
+                <td>${name}</td>
+                <td id="subsidy-${regionId}">${subsidies}</td>
+                <td>${presence || "—"}</td>
+            </tr>
+        `;
+    }).join('');
 }
 
 // --- Strategy Execution Loop ---
@@ -642,33 +688,39 @@ async function startStrategyExecution() {
                 }
                 // Handle Interactive: Scale Presence
                 else if (pl.action_type === "scale_presence") {
-                    const currentRegions = player.presence_regions || [];
-                    const neighborIds = new Set();
+                    let rId = pl.target_region;
 
-                    if (currentRegions.length === 0) {
-                        // Fallback: If no presence (shouldn't happen), assume all open
-                        [1, 2, 3, 4, 5, 6, 7, 8, 9, 10].forEach(n => neighborIds.add(n));
-                    } else {
-                        currentRegions.forEach(rId => {
-                            const neighbors = WORLD_MAP[rId] || [];
-                            neighbors.forEach(n => neighborIds.add(n));
-                        });
-                        // Remove potential duplicates or already owned regions
-                        currentRegions.forEach(rId => neighborIds.delete(rId));
+                    if (!rId) {
+                        const currentRegions = player.presence_regions || [];
+                        const neighborIds = new Set();
+
+                        if (currentRegions.length === 0) {
+                            [1, 2, 3, 4, 5, 6, 7, 8, 9, 10].forEach(n => neighborIds.add(n));
+                        } else {
+                            currentRegions.forEach(rId => {
+                                const neighbors = WORLD_MAP[rId] || [];
+                                neighbors.forEach(n => neighborIds.add(n));
+                            });
+                            currentRegions.forEach(rId => neighborIds.delete(rId));
+                        }
+
+                        const availableRegions = REGIONS.filter((name, idx) => neighborIds.has(idx + 1));
+
+                        if (availableRegions.length === 0) {
+                            addLog(`SKIPPED: No valid adjacent regions for expansion.`);
+                            resolvedNums.add(pl.worker_number);
+                            continue;
+                        }
+
+                        const reg = await promptUserChoice("Market Expansion", "Choose region to deploy presence:", availableRegions);
+                        if (!reg) {
+                            addLog(`SKIPPED: Expansion cancelled.`);
+                            resolvedNums.add(pl.worker_number);
+                            continue;
+                        }
+                        rId = REGIONS.indexOf(reg) + 1;
                     }
 
-                    const availableRegions = REGIONS.filter((name, idx) => neighborIds.has(idx + 1));
-
-                    if (availableRegions.length === 0) {
-                        addLog(`SKIPPED: No valid adjacent regions for expansion.`);
-                        resolvedNums.add(pl.worker_number);
-                        // IsPlayerResolved might loop if we don't handle it? 
-                        // We added to resolvedNums, so it should be fine.
-                        continue;
-                    }
-
-                    const reg = await promptUserChoice("Market Expansion", "Choose region to deploy presence:", availableRegions);
-                    const rId = REGIONS.indexOf(reg) + 1;
                     await callActionEndpoint("scale-presence", { player_id: player.id, region_id: rId });
                     resolvedNums.add(pl.worker_number);
                 }

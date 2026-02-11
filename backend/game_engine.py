@@ -244,6 +244,7 @@ def get_projected_player_state(db: Session, player_id: int, up_to_worker_number:
         "reputation": player.reputation,
         "total_workers": player.total_workers,
         "presence_count": player.presence_count,
+        "presence_regions": [pres.region_id for pres in player.presence],
         "income": player.income, # Simplified, income updates are complex but usually stable within turn except for upgrades
     }
     
@@ -335,6 +336,8 @@ def get_projected_player_state(db: Session, player_id: int, up_to_worker_number:
                 if state["corporate_funds"] >= cost:
                     state["corporate_funds"] -= cost
                     state["presence_count"] = current_presence + 1
+                    if p.target_region:
+                        state["presence_regions"].append(p.target_region)
 
         elif p.action_type == "train_model":
             # Track worker accumulation for model training
@@ -422,7 +425,7 @@ def validate_increase_net_worth(db: Session, player_id: int, projected_state: di
     return None
 
 
-def validate_scale_presence(db: Session, player_id: int, projected_state: dict):
+def validate_scale_presence(db: Session, player_id: int, projected_state: dict, target_region: int = None):
     """Checks requirements for Scale Presence using projected state."""
     current_presence = projected_state.get("presence_count", 1)
     
@@ -430,22 +433,26 @@ def validate_scale_presence(db: Session, player_id: int, projected_state: dict):
     if current_presence >= 10:
         return {"error": "Maximum presence reached."}
     
-    # Cost Index: Presence 1 -> Next is 2. cost_idx = 2-2 = 0.
-    # Logic in frontend was: val-2. 
-    # Current presence 1. Next is 2. Cost is PRESENCE_COSTS[0].
-    # So index = current_presence - 1?
-    # Wait, PRESENCE_COSTS = [1, 3, 4...] (Cost for 2nd, 3rd...)
-    # If I have 1 presence, next is 2nd. Index 0. 
-    # So index = count - 1.
     cost_idx = current_presence - 1
     if cost_idx >= len(PRESENCE_COSTS):
-         # Fallback max cost?
-         cost = PRESENCE_COSTS[-1]
-    else:
-        cost = PRESENCE_COSTS[cost_idx]
+        return {"error": "No more expansions allowed."}
 
+    cost = PRESENCE_COSTS[cost_idx]
     if projected_state["corporate_funds"] < cost:
-        return {"error": f"Insufficient funds. Need ${cost}."}
+        return {"error": f"Insufficient funds for expansion. Need ${cost}."}
+
+    if target_region:
+        if target_region in projected_state["presence_regions"]:
+            return {"error": "Already have presence in this region (or pending expansion)."}
+        
+        # Adjacency Check
+        valid_adj = False
+        for r_id in projected_state["presence_regions"]:
+            if target_region in WORLD_MAP.get(r_id, []):
+                valid_adj = True
+                break
+        if not valid_adj:
+            return {"error": f"Region {target_region} is not adjacent to current presence."}
 
     return None
 
@@ -852,7 +859,7 @@ def validate_placement_count(db: Session, player_id: int, action_type: str, work
 
     return None
 
-def validate_action_requirements(db: Session, player_id: int, action_type: str, worker_number: int):
+def validate_action_requirements(db: Session, player_id: int, action_type: str, worker_number: int, target_region: int = None):
     """Checks if the player meets the requirements for a proposed action, accounting for previous workers."""
     
     # Calculate projected state
@@ -867,12 +874,12 @@ def validate_action_requirements(db: Session, player_id: int, action_type: str, 
     elif action_type == "increase_net_worth":
         return validate_increase_net_worth(db, player_id, projected_state)
     elif action_type == "scale_presence":
-        return validate_scale_presence(db, player_id, projected_state)
+        return validate_scale_presence(db, player_id, projected_state, target_region)
     
     return None
 
 
-def place_worker(db: Session, player_id: int, worker_number: int, action_type: str):
+def place_worker(db: Session, player_id: int, worker_number: int, action_type: str, target_region: int = None):
     """
     Validates and places (or updates) a worker on a specific action slot.
     """
@@ -891,7 +898,7 @@ def place_worker(db: Session, player_id: int, worker_number: int, action_type: s
         return count_error
 
     # 3. Validation: Does player meet the requirements for the action?
-    req_error = validate_action_requirements(db, player_id, action_type, worker_number)
+    req_error = validate_action_requirements(db, player_id, action_type, worker_number, target_region)
     if req_error:
         return req_error
 
@@ -908,12 +915,14 @@ def place_worker(db: Session, player_id: int, worker_number: int, action_type: s
 
     if placement:
         placement.action_type = action_type
+        placement.target_region = target_region
     else:
         placement = WorkerPlacement(
             game_id=player.game_id,
             player_id=player_id,
             worker_number=worker_number,
             action_type=action_type,
+            target_region=target_region
         )
         db.add(placement)
 

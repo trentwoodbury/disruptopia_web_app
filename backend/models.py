@@ -133,6 +133,7 @@ class WorkerPlacement(Base):
     worker_number: Mapped[int] = mapped_column(Integer)  # 1-8
     # (e.g., 'buy_chips', 'raise_funds', 'recruit')
     action_type: Mapped[str] = mapped_column(String(50))
+    target_region: Mapped[Optional[int]] = mapped_column(Integer)  # For Scale Presence
 
     player: Mapped["Player"] = relationship(back_populates="worker_placements")
 
