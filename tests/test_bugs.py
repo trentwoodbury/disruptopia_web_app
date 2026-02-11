@@ -337,3 +337,39 @@ def test_train_model_projected_workers(page: Page, api_server):
     page.wait_for_timeout(1000)
     expect(count_cell).to_have_text("3, 4")
 
+def test_train_model_sequential_upgrades(page: Page, api_server):
+    """Verify that multiple separate upgrades can be assigned in one turn."""
+    requests.post(f"{api_server}/game/reset")
+    
+    # Setup: 5 workers, Compute 2. Millionaire.
+    requests.post(f"{api_server}/actions/execute/marketing?player_id=1")
+    requests.post(f"{api_server}/actions/execute/increase-net-worth?player_id=1")
+    requests.post(f"{api_server}/actions/execute/raise-funds", json={"player_id": 1, "chunks": [1, 1, 1]})
+    requests.post(f"{api_server}/actions/execute/buy-chips?player_id=1") # C2
+    
+    # Total workers: 3 + 0 (Startup starts with 3). 
+    # Current model v0. Compute 2.
+    
+    page.goto(api_server)
+    page.select_option("#player-select", "1")
+    
+    train_model_row = page.locator("tr:has-text('Train New Model')")
+    button = train_model_row.get_by_role("button", name="Assign Tech Worker")
+    count_cell = page.locator("#count-train-new-model")
+    
+    # 1. First upgrade (v0 -> v1, cost 1)
+    button.click()
+    page.wait_for_timeout(1000)
+    expect(count_cell).to_have_text("1")
+    
+    # 2. Second upgrade (v1 -> v2, cost 1)
+    # Button should STILL be visible because Compute is 2.
+    expect(button).to_be_visible()
+    button.click()
+    page.wait_for_timeout(1000)
+    expect(count_cell).to_have_text("1, 2")
+    
+    # 3. Third upgrade (v2 -> v3, cost 2)
+    # Compute is only 2. Button should HIDE.
+    expect(button).not_to_be_visible()
+

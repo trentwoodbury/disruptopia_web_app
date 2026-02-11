@@ -337,23 +337,21 @@ def get_projected_player_state(db: Session, player_id: int, up_to_worker_number:
                     state["presence_count"] = current_presence + 1
 
         elif p.action_type == "train_model":
-            # Technically increases rep/power, but doesn't consume funds/compute (consumes worker count which is checked elsewhere).
-            # It DOES increase Model Version which might affect future checks.
-            # We must simulate upgrade.
-            # However, train_model can take multiple workers. 
-            # In our linear simulation, we see each worker individually. 
-            # For simplicity: Assume EACH valid Train Model placement attempts to upgrade.
-            # But wait, multiple workers might be needed for ONE upgrade.
-            # This is tricky. 
-            # If Model v3 needs 2 workers:
-            # W1 on Train -> Sees current v2 needing 2. Not enough alone. 
-            # W2 on Train -> Sees current v2 needing 2. Together make 2. Upgrade?
-            # Supporting multi-worker actions in linear projection is complex.
-            # FOR NOW: Since Train Model doesn't consume FUNDS, and Requirements are static per version... 
-            # We can skip updating model_version here unless critical. 
-            # But the user might train v2 then v3 in same turn? Unlikely/Hard.
-            # Let's stick to Funds tracking which is the User Request.
-            pass
+            # Track worker accumulation for model training
+            if "train_workers_accumulated" not in state:
+                state["train_workers_accumulated"] = 0
+            
+            state["train_workers_accumulated"] += 1
+            
+            # Check if an upgrade is triggered
+            next_version = state["model_version"] + 1
+            if next_version <= 7:
+                base_req = MODEL_WORKER_COSTS.get(next_version, 1)
+                req = max(1, base_req + mods["model_worker_cost_offset"])
+                
+                if state["train_workers_accumulated"] >= req:
+                    state["model_version"] = next_version
+                    state["train_workers_accumulated"] = 0
 
     return state
 
@@ -841,13 +839,11 @@ def validate_placement_count(db: Session, player_id: int, action_type: str, work
     # USER UPDATE: these are NOT restricted. Players can buy multiple chips/recruit multiple workers if they can afford it.
     pass
 
-    # 2. Train Model (Limit to Requirement)
+    # 2. Train Model (Relaxed to allow multiple upgrades)
     if action_type == "train_model":
-        player = db.get(Player, player_id)
-        next_version = player.model_version + 1
-        required = MODEL_WORKER_COSTS.get(next_version, 1)
-        if current_total > required:
-            return {"error": f"Only {required} worker(s) needed for Model v{next_version}."}
+        # We allow placing as many workers as the player has compute/eligibility for.
+        # This is finalized in validate_action_requirements which uses projection.
+        pass
 
     # 3. Raise Funds (Soft Cap at 3 for max efficiency, 4+ is wasted)
     if action_type == "raise_funds":
