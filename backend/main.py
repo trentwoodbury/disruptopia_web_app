@@ -73,28 +73,19 @@ def resolve_round(game_id: int, db: Session = Depends(get_db)):
 
 @app.post("/actions/place-worker")
 async def place_worker(req: schemas.ActionRequest, db: Session = Depends(get_db)):
-    # 1. Validation: Ensure at least one worker was sent
-    if not req.worker_ids:
-        raise HTTPException(status_code=400, detail="No worker IDs provided.")
+    # 2. Iterate through all provided workers and place them
+    last_result = {}
+    for worker_id in req.worker_ids:
+        last_result = game_engine.place_worker(
+            db,
+            player_id=req.player_id,
+            worker_number=worker_id,
+            action_type=req.action_type,
+        )
+        if "error" in last_result:
+            raise HTTPException(status_code=400, detail=last_result["error"])
 
-    # 2. Extract the first worker for the engine (as it handles one-by-one currently)
-    primary_worker_id = req.worker_ids[0]
-
-    # 3. Call the engine logic
-    result = game_engine.place_worker(
-        db,
-        player_id=req.player_id,
-        worker_number=primary_worker_id,
-        action_type=req.action_type,
-    )
-
-    # 4. Handle errors from the engine
-    if "error" in result:
-        raise HTTPException(status_code=400, detail=result["error"])
-
-    # 5. Broadcast the update to all connected players (refreshing the frontend)
-    # Note: We need a game_id here. If ActionRequest doesn't have it,
-    # we can fetch it from the player object.
+    # 3. Broadcast the update to all connected players
     player = db.get(models.Player, req.player_id)
     await manager.broadcast(
         {
@@ -106,7 +97,7 @@ async def place_worker(req: schemas.ActionRequest, db: Session = Depends(get_db)
         }
     )
 
-    return result
+    return last_result
 
 
 @app.post("/actions/play-card", tags=["Actions"])

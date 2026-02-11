@@ -672,14 +672,16 @@ def execute_raise_funds_sequence(db: Session, player_id: int, chunks: list[int])
     mods = get_player_modifiers(db, player_id)
     summary = []
 
+    # Siphon once at the start of the execution sequence
+    total_siphoned = player.corporate_funds
+    player.personal_funds += total_siphoned
+    player.corporate_funds = 0
+    
+    total_drawn = 0
     for worker_count in chunks:
         if worker_count < 1:
             continue
-        siphoned = player.corporate_funds
-        player.personal_funds += siphoned
-        # We set it to 0 before drawing the new income
-        player.corporate_funds = 0
-
+            
         if mods["worker_income_efficiency"]:
             cap = 39
         else:
@@ -691,14 +693,12 @@ def execute_raise_funds_sequence(db: Session, player_id: int, chunks: list[int])
                 cap = 39
 
         drawn = min(player.income, cap)
-        # Use += here to ensure it adds correctly if there were multiple chunks 
-        # (Though we set to 0 at the start of each chunk, so = is actually fine, 
-        # but let's be explicit about the 'new' funds being the drawn amount)
-        player.corporate_funds = drawn
-        summary.append({"workers": worker_count, "siphoned": siphoned, "drawn": drawn})
+        total_drawn += drawn
+        summary.append({"workers": worker_count, "drawn": drawn})
 
+    player.corporate_funds = total_drawn
     db.commit()
-    return {"action": "raise_funds_resolved", "sequence": summary}
+    return {"action": "raise_funds_resolved", "total_siphoned": total_siphoned, "total_drawn": total_drawn, "sequence": summary}
 
 
 # ==========================================

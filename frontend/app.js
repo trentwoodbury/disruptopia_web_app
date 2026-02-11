@@ -247,7 +247,9 @@ function updateUI(me) {
 
     // Refresh the Strategy Board counts
     ACTIONS.forEach(action => {
-        const slug = action.toLowerCase().replace(/ /g, "_");
+        let slug = action.toLowerCase().replace(/ /g, "_");
+        if (slug === 'train_new_model') slug = 'train_model'; // Normalize to backend slug
+
         // Get all worker numbers placed in this slot
         const placements = currentGameState.placements.filter(p => p.action_type === slug);
         const workerIds = placements.map(p => p.worker_number).sort((a, b) => a - b).join(", ");
@@ -325,26 +327,47 @@ function isActionAvailable(actionSlug, player, placementCount = 0) {
     }
 
     // ... train_new_model ...
-    if (actionSlug === 'train_new_model') { // Slug is train_new_model or train_model?
-        // ACTIONS array has "Train New Model". Slug matches regex.
-        // Backend uses 'train_model'. Frontend slug: 'train_new_model'.
-        // Wait, ACTIONS constant says "Train New Model".
-        // placeWorker converts to: "train_new_model".
-        // Game engine expects "train_model"?
-        // Let's check backend enum or string logic.
-        // models.py doesn't check enum.
-        // game_engine.py checks `if action_type == "train_model":`
-        // Frontend sends placeWorker("Train New Model") -> actionSlug="train_new_model".
-        // BUG: Frontend slug mismatch if backend expects "train_model".
-        // Actually, let's fix the validation logic first.
+    // Train Model Logic (Requires checking next version cost)
+    if (actionSlug === 'train_model') {
+        // Calculate projected version based on existing train_model placements
+        const myTrainPlacements = currentGameState.placements.filter(
+            p => p.player_id === player.id && p.action_type === 'train_model'
+        );
 
-        const nextVer = player.model_version + 1;
-        if (nextVer > 7) return false;
-        if (player.compute_level < nextVer) return false;
+        // This is tricky. If we already placed workers for an upgrade, we need to know
+        // what version we'll be AFTER those resolve.
+        // For simplicity: check how many workers are placed.
+        let workersUsedForTraining = myTrainPlacements.length;
+        let pVersion = player.model_version;
 
-        // NW Req
-        if (nextVer >= 3 && nextVer <= 4 && player.net_worth < 1) return false;
-        if (nextVer >= 5 && player.net_worth < 2) return false;
+        // Progress through versions using placed workers
+        while (pVersion < 7) {
+            const nextV = pVersion + 1;
+            const costStr = MODEL_COSTS[nextV] || "1w";
+            const cost = parseInt(costStr.replace('w', ''));
+            if (workersUsedForTraining >= cost) {
+                workersUsedForTraining -= cost;
+                pVersion++;
+            } else {
+                break;
+            }
+        }
+
+        const nextTargetV = pVersion + 1;
+        if (nextTargetV > 7) return false;
+
+        const costStr = MODEL_COSTS[nextTargetV] || "1w";
+        const reqWorkers = parseInt(costStr.replace('w', ''));
+
+        // Requirement Check: Enough Workers Left?
+        const placedCount = currentGameState.placements.filter(p => p.player_id === PLAYER_ID).length;
+        const availableWorkers = player.total_worker_count - placedCount;
+        if (availableWorkers < reqWorkers) return false;
+
+        // Requirement Check: Compute and Net Worth
+        if (player.compute_level < nextTargetV) return false;
+        if (nextTargetV >= 3 && nextTargetV <= 4 && player.net_worth < 1) return false;
+        if (nextTargetV >= 5 && player.net_worth < 2) return false;
     }
 
     if (actionSlug === 'buy_chips') {
@@ -362,7 +385,6 @@ function isActionAvailable(actionSlug, player, placementCount = 0) {
 
     return true;
 }
-
 async function placeWorker(actionName) {
     if (!currentGameState || !PLAYER_ID) {
         addLog("Error: Identity required. Please select a player.");
@@ -372,39 +394,49 @@ async function placeWorker(actionName) {
     const me = currentGameState.players.find(p => p.id === PLAYER_ID);
     if (!me) return;
 
+    let actionSlashSlug = actionName.toLowerCase().replace(/ /g, "_");
+    const actionSlug = (actionSlashSlug === 'train_new_model') ? 'train_model' : actionSlashSlug;
+
+    // Calculate count needed for Train Model
+    let workersToPlaceCount = 1;
+    if (actionSlug === 'train_model') {
+        const myTrainPlacements = currentGameState.placements.filter(
+            p => p.player_id === PLAYER_ID && p.action_type === 'train_model'
+        );
+        let workersUsedForTraining = myTrainPlacements.length;
+        let pVersion = me.model_version;
+        while (pVersion < 7) {
+            const nextV = pVersion + 1;
+            const costStr = MODEL_COSTS[nextV] || "1w";
+            const cost = parseInt(costStr.replace('w', ''));
+            if (workersUsedForTraining >= cost) {
+                workersUsedForTraining -= cost;
+                pVersion++;
+            } else { break; }
+        }
+        const nextTargetV = pVersion + 1;
+        const costStr = MODEL_COSTS[nextTargetV] || "1w";
+        workersToPlaceCount = parseInt(costStr.replace('w', ''));
+    }
+
     // 1. Identify which worker numbers are already on the board
     const usedNumbers = currentGameState.placements
         .filter(p => p.player_id === PLAYER_ID)
         .map(p => p.worker_number);
 
-    // 2. Find the first available worker number
-    let nextWorkerNumber = -1;
+    // 2. Find the required number of available worker numbers
+    let workersToPlace = [];
     for (let i = 1; i <= me.total_worker_count; i++) {
         if (!usedNumbers.includes(i)) {
-            nextWorkerNumber = i;
-            break;
+            workersToPlace.push(i);
+            if (workersToPlace.length === workersToPlaceCount) break;
         }
     }
 
-    if (nextWorkerNumber === -1) {
-        addLog("System: No workers available!");
+    if (workersToPlace.length < workersToPlaceCount) {
+        addLog("System: Not enough workers available!");
         return;
     }
-
-    const actionSlug = actionName.toLowerCase().replace(/ /g, "_");
-
-    // Fix slug for Train New Model
-    if (actionSlug === 'train_new_model') {
-        // placeWorker sends action_type. Backend should handle 'train_model'. 
-        // 'train_new_model' is from frontend ACTIONS array text conversion.
-        // We should map it correctly.
-        // BUT wait, does backend handle 'train_new_model'?
-        // game_engine.py checks "train_model".
-        // So sending 'train_new_model' WILL FAIL if backend doesn't convert it.
-        // Let's force it to 'train_model' here.
-        // (Note: This is a silent fix for a potential existing bug too)
-    }
-    const finalSlug = (actionSlug === 'train_new_model') ? 'train_model' : actionSlug;
 
     // 3. Send the request matching the ActionRequest schema exactly
     try {
@@ -414,14 +446,14 @@ async function placeWorker(actionName) {
             body: JSON.stringify({
                 player_id: PLAYER_ID,
                 game_id: GAME_ID,
-                action_type: finalSlug,
-                worker_ids: [nextWorkerNumber],
+                action_type: actionSlug,
+                worker_ids: workersToPlace,
                 target_region: null
             })
         });
 
         if (response.ok) {
-            addLog(`Success: Worker ${nextWorkerNumber} assigned to ${actionName}.`);
+            addLog(`Success: Workers ${workersToPlace.join(", ")} assigned to ${actionName}.`);
         } else {
             const errorData = await response.json();
             const errorMsg = errorData.detail || "Unknown error";
@@ -442,26 +474,56 @@ function renderPlayerStats() {
 
 function renderStrategyBoard() {
     const container = document.getElementById('strategy-rows');
-    // We need the active player to check availability
+    if (!container) return;
     const me = currentGameState?.players.find(p => p.id === PLAYER_ID);
 
     container.innerHTML = ACTIONS.map(action => {
-        let slug = action.toLowerCase().replace(/ /g, '_');
-        // Fix for "Train New Model" mismatch if needed (handled in backend?)
-        // Backend expects 'train_model' usually? 
-        // If my previous code sent 'train_new_model', did it work?
-        // Let's normalize it here just for validation check
-        if (slug === 'train_new_model') slug = 'train_model'; // Backend usually uses 'train_model'
+        let actionSlug = action.toLowerCase().replace(/ /g, '_');
+        if (actionSlug === 'train_new_model') actionSlug = 'train_model';
 
-        const isAvail = me ? isActionAvailable(slug, me) : false;
+        const isAvail = me ? isActionAvailable(actionSlug, me) : false;
         const btnStyle = isAvail ? "" : "display: none;";
-        // Or "opacity: 0.5; pointer-events: none;" if we want to show it disabled
 
+        // Calculate Display Cost
+        let displayCost = "—";
+        if (me) {
+            if (actionSlug === 'buy_chips') {
+                displayCost = COMPUTE_COSTS[me.compute_level + 1] || "MAX";
+            } else if (actionSlug === 'recruit') {
+                displayCost = WORKER_COSTS[me.total_worker_count + 1] || "MAX";
+            } else if (actionSlug === 'train_model') {
+                // Calculate projected version to show next cost
+                const myTrainPlacements = currentGameState.placements.filter(
+                    p => p.player_id === PLAYER_ID && p.action_type === 'train_model'
+                );
+                let workersUsedForTraining = myTrainPlacements.length;
+                let pVersion = me.model_version;
+                while (pVersion < 7) {
+                    const nextV = pVersion + 1;
+                    const costStr = MODEL_COSTS[nextV] || "1w";
+                    const cost = parseInt(costStr.replace('w', ''));
+                    if (workersUsedForTraining >= cost) {
+                        workersUsedForTraining -= cost;
+                        pVersion++;
+                    } else { break; }
+                }
+                displayCost = (pVersion < 7) ? MODEL_COSTS[pVersion + 1].toUpperCase() : "MAX";
+            } else if (actionSlug === 'increase_net_worth') {
+                displayCost = (me.net_worth === 0) ? "$3 (-2 REP)" : (me.net_worth === 1) ? "$5 (-4 REP)" : "MAX";
+            } else if (actionSlug === 'scale_presence') {
+                displayCost = `$${PRESENCE_COSTS_LIST[me.presence_count - 1] || 14}`;
+            } else if (['marketing', 'play_card', 'raise_funds'].includes(actionSlug)) {
+                displayCost = "FREE";
+            }
+        }
+
+        const idSuffix = action.toLowerCase().replace(/ /g, '-');
         return `
         <tr>
             <td>${action}</td>
-            <td id="count-${slug.replace(/_/g, '-')}">—</td>
-            <td><button onclick="placeWorker('${action}')" style="${btnStyle}">Assign Tech Worker</button></td>
+            <td>${displayCost}</td>
+            <td id="count-${idSuffix}">—</td>
+            <td><button onclick="placeWorker('${action}')" class="btn-worker" style="${btnStyle}">Assign Tech Worker</button></td>
         </tr>
     `}).join('');
 }
@@ -599,11 +661,31 @@ async function startStrategyExecution() {
                     await callActionEndpoint("scale-presence", { player_id: player.id, region_id: rId });
                     resolvedNums.add(pl.worker_number);
                 }
+                // Handle Train Model Aggregation
+                else if (pl.action_type === "train_model") {
+                    const tmPlacements = pPlacements.filter(p => p.action_type === "train_model");
+                    // We need to know the cost of the NEXT upgrade to know how many workers to use
+                    // But actually, the backend might just resolve one upgrade if we send sufficient count.
+                    // Let's assume we use ALL currently grouped workers for this action if they match.
+                    const costStr = MODEL_COSTS[player.model_version + 1] || "1w";
+                    const req = parseInt(costStr.replace('w', ''));
+
+                    if (tmPlacements.length >= req) {
+                        const usedWorkers = tmPlacements.slice(0, req);
+                        await callActionEndpoint("train-model", {
+                            player_id: player.id,
+                            worker_count: req
+                        });
+                        usedWorkers.forEach(p => resolvedNums.add(p.worker_number));
+                    } else {
+                        addLog(`SKIPPED: Insufficient group size for [${player.name}] Train Model.`);
+                        tmPlacements.forEach(p => resolvedNums.add(p.worker_number));
+                    }
+                }
                 // Automatic Actions
                 else {
                     const slug = pl.action_type.replace(/_/g, "-");
                     const params = { player_id: player.id };
-                    if (pl.action_type === "train_model") params.worker_count = 1;
                     await callActionEndpoint(slug, params);
                     resolvedNums.add(pl.worker_number);
                 }
