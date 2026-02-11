@@ -60,7 +60,7 @@ def test_projected_availability_raise_funds_unlocks_net_worth(db_session):
     - Income: $3 (Set via power/subsidy).
     - Increase Net Worth Cost: $3. 
     - Current State: $2 < $3 (Unavailable).
-    - Action 1: Raise Funds (Projected Funds becomes $2 + $3 = $5).
+    - Action 1: Raise Funds (Projected Funds becomes $3
     - Action 2: Increase Net Worth (Cost $3).
     - Checks: Action 2 should NOT fail.
     """

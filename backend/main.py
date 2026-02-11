@@ -3,6 +3,7 @@ from sqlalchemy.orm import Session
 from typing import List, Dict
 
 from starlette.middleware.cors import CORSMiddleware
+from fastapi.staticfiles import StaticFiles
 
 from backend.database import SessionLocal
 from backend import game_engine, schemas, models
@@ -59,9 +60,6 @@ def get_db():
         db.close()
 
 
-@app.get("/")
-def read_root():
-    return {"status": "Disruptopia Engine Online"}
 
 
 @app.post("/game/{game_id}/resolve", tags=["Game Flow"])
@@ -268,3 +266,6 @@ def reset_game():
     """Drops all tables and re-seeds the game (Factory Reset)."""
     from backend import reset_utils
     return reset_utils.reset_game_state()
+
+
+app.mount("/", StaticFiles(directory="frontend", html=True), name="frontend")

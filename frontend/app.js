@@ -191,9 +191,9 @@ function renderPlayerDashboard(player, container) {
 
     const renderSection = (title, slug) => {
         let isAchieved = false;
-        if (slug === 'startup') isAchieved = true; // Always achieved if playing
-        if (slug === 'millionaire') isAchieved = player.net_worth_level >= 1;
-        if (slug === 'billionaire') isAchieved = player.net_worth_level >= 2;
+        if (slug === 'startup') isAchieved = (player.net_worth === 0);
+        if (slug === 'millionaire') isAchieved = (player.net_worth === 1);
+        if (slug === 'billionaire') isAchieved = (player.net_worth === 2);
 
         const checkMark = isAchieved ? " (X)" : "";
 
@@ -243,11 +243,9 @@ function updateUI(me) {
     document.getElementById('stat-pers-funds').innerText = `$${me.personal_funds}`;
     document.getElementById('stat-total-workers').innerText = me.total_worker_count;
 
-    // Check placed workers
-    const placedCount = me.placed_worker_numbers.length;
-    document.getElementById('stat-avail-workers').innerText = me.total_worker_count - placedCount;
+    document.getElementById('stat-reputation').innerText = me.reputation;
 
-    // Refresh the Strategy Board counts (now worker IDs)
+    // Refresh the Strategy Board counts
     ACTIONS.forEach(action => {
         const slug = action.toLowerCase().replace(/ /g, "_");
         // Get all worker numbers placed in this slot
