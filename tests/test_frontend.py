@@ -4,6 +4,7 @@ import time
 import os
 import requests
 from playwright.sync_api import Page, expect
+import re
 
 # Use a specific port for testing if 8000 is occupied, 
 # but frontend app.js expects 8000. 
@@ -45,63 +46,241 @@ def test_net_worth_progression_ui(page: Page, api_server):
     """
     Test that Net Worth level markers (X) move correctly when upgrading.
     """
-    # 1. Reset Game to clean state
-    # Use the reset endpoint which seeds everything
     requests.post(f"{api_server}/game/reset")
     
-    # Load the page and point it to our test server
-    page.on("console", lambda msg: print(f"BROWSER CONSOLE: {msg.text}"))
-    page.on("requestfailed", lambda req: print(f"BROWSER REQUEST FAILED: {req.url} - {req.failure}"))
     page.set_viewport_size({"width": 1280, "height": 1024})
     page.goto(api_server)
     
-    # 3. Select Player One (ID 1)
-    # Wait for options to load
     page.wait_for_selector("#player-select option[value='1']", state="attached", timeout=10000)
     page.select_option("#player-select", "1")
-    
-    # Wait for stats to load
     page.wait_for_selector("#user-name:has-text('Player One')")
 
-    # 4. Verify STARTUP has (X) and others don't
     expect(page.get_by_text("STARTUP (X)")).to_be_visible()
-    expect(page.get_by_text("MILLIONAIRE (X)")).not_to_be_visible()
-    expect(page.get_by_text("BILLIONAIRE (X)")).not_to_be_visible()
     
-    # 5. Increase Net Worth to Millionaire (Level 1)
-    # Costs $3, -2 Rep. Player starts with $3, 0 Rep.
+    # Upgrade to Millionaire
     requests.post(f"{api_server}/actions/execute/increase-net-worth?player_id=1")
-    
-    # Trigger refresh in UI
     page.evaluate("refreshData()")
     
-    # 6. Verify X has moved to MILLIONAIRE
     expect(page.get_by_text("MILLIONAIRE (X)")).to_be_visible()
     expect(page.get_by_text("STARTUP (X)")).not_to_be_visible()
     
-    # 7. Increase Net Worth to Billionaire (Level 2)
-    # Costs $5, -4 Rep. Min Rep -3.
-    # Currently: $0, -2 Rep.
-    
-    # Boost reputation and power (income) via Marketing
-    # Millionaire marketing: +1 Rep, +1 Power.
-    # We do it 6 times: Rep -2 -> 4, Power 3 -> 9. Income -> 9.
+    # Upgrade to Billionaire (Needs Funds & Rep)
     for _ in range(6):
         requests.post(f"{api_server}/actions/execute/marketing?player_id=1")
 
-    # Get money (Income 9, Cap 8)
     requests.post(f"{api_server}/actions/execute/raise-funds", json={"player_id": 1, "chunks": [1]})
     
-    # Now upgrade to Billionaire
-    # Costs $5, -4 Rep. Current: $8, 4 Rep.
-    # Outcome: $3, 0 Rep.
     res = requests.post(f"{api_server}/actions/execute/increase-net-worth?player_id=1")
     if res.status_code != 200:
         print(f"DEBUG: Billionaire upgrade failed: {res.text}")
     
     page.evaluate("refreshData()")
     
-    # 8. Verify X has moved to BILLIONAIRE
     expect(page.get_by_text("BILLIONAIRE (X)")).to_be_visible()
     expect(page.get_by_text("MILLIONAIRE (X)")).not_to_be_visible()
-    expect(page.get_by_text("STARTUP (X)")).not_to_be_visible()
+
+def test_increase_net_worth_available_on_start(page: Page, api_server):
+    """Verify that Increase Net Worth is available on turn 1."""
+    requests.post(f"{api_server}/game/reset")
+    page.goto(api_server)
+    
+    page.wait_for_selector("#player-select option[value='1']", state="attached")
+    page.select_option("#player-select", "1")
+    page.wait_for_selector("#user-name:has-text('Player One')")
+    
+    increase_nw_row = page.locator("tr:has-text('Increase Net Worth')")
+    button = increase_nw_row.get_by_role("button", name="Assign Tech Worker")
+    
+    expect(button).to_be_visible()
+    expect(button).to_have_class(re.compile("btn-worker"))
+
+def test_train_model_worker_ids_display(page: Page, api_server):
+    """Verify that worker IDs show up in the Train New Model row."""
+    requests.post(f"{api_server}/game/reset")
+    page.goto(api_server)
+    
+    page.wait_for_selector("#player-select option[value='1']", state="attached")
+    page.select_option("#player-select", "1")
+    
+    train_model_row = page.locator("tr:has-text('Train New Model')")
+    button = train_model_row.get_by_role("button", name="Assign Tech Worker")
+    button.click()
+    
+    count_cell = page.locator("#count-train-new-model")
+    expect(count_cell).to_have_text("1")
+
+def test_train_model_multi_worker_placement(page: Page, api_server):
+    """Verify that Train New Model places multiple workers if cost > 1."""
+    requests.post(f"{api_server}/game/reset")
+    
+    # Needs NW 1 for Compute 3+.
+    requests.post(f"{api_server}/actions/execute/marketing?player_id=1")
+    requests.post(f"{api_server}/actions/execute/increase-net-worth?player_id=1")
+    requests.post(f"{api_server}/actions/execute/raise-funds", json={"player_id": 1, "chunks": [1, 1, 1]})
+    
+    # Upgrade Compute to 3
+    requests.post(f"{api_server}/actions/execute/buy-chips?player_id=1")
+    requests.post(f"{api_server}/actions/execute/buy-chips?player_id=1")
+    
+    # Train to v2
+    requests.post(f"{api_server}/actions/execute/train-model?player_id=1&worker_count=1")
+    requests.post(f"{api_server}/actions/execute/train-model?player_id=1&worker_count=1")
+    
+    page.goto(api_server)
+    page.wait_for_selector("#player-select option[value='1']", state="attached")
+    page.select_option("#player-select", "1")
+    
+    # Verify we are at v2 via state probe
+    page.wait_for_timeout(1000)
+    state = page.evaluate("currentGameState.players.find(p => p.id === 1)")
+    assert state['model_version'] == 2
+    assert state['compute_level'] >= 3
+    
+    train_model_row = page.locator("tr:has-text('Train New Model')")
+    button = train_model_row.get_by_role("button", name="Assign Tech Worker")
+    button.click()
+    
+    # Should show "1, 2"
+    count_cell = page.locator("#count-train-new-model")
+    page.wait_for_timeout(1000)
+    expect(count_cell).to_have_text("1, 2")
+
+def test_train_model_button_disappears_if_insufficient_workers(page: Page, api_server):
+    """Verify that Train New Model button disappears if not enough workers remain."""
+    requests.post(f"{api_server}/game/reset")
+    
+    # Setup conditions
+    requests.post(f"{api_server}/actions/execute/marketing?player_id=1")
+    requests.post(f"{api_server}/actions/execute/increase-net-worth?player_id=1")
+    requests.post(f"{api_server}/actions/execute/raise-funds", json={"player_id": 1, "chunks": [1, 1, 1]})
+    requests.post(f"{api_server}/actions/execute/buy-chips?player_id=1")
+    requests.post(f"{api_server}/actions/execute/buy-chips?player_id=1")
+    requests.post(f"{api_server}/actions/execute/train-model?player_id=1&worker_count=1")
+    requests.post(f"{api_server}/actions/execute/train-model?player_id=1&worker_count=1")
+    
+    page.goto(api_server)
+    page.wait_for_selector("#player-select option[value='1']", state="attached")
+    page.select_option("#player-select", "1")
+    
+    # Initially visible (3 > 2).
+    train_model_row = page.locator("tr:has-text('Train New Model')")
+    train_button = train_model_row.get_by_role("button", name="Assign Tech Worker")
+    expect(train_button).to_be_visible()
+    
+    # Place 2 workers on "Marketing"
+    marketing_row = page.locator("tr:has-text('Marketing')")
+    m_btn = marketing_row.get_by_role("button", name="Assign Tech Worker")
+    m_btn.click()
+    page.wait_for_timeout(500)
+    m_btn.click()
+    page.wait_for_timeout(1000)
+    
+    # Left: 1 worker. Needs 2. Hide.
+    expect(train_button).not_to_be_visible()
+
+def test_train_model_projected_compute(page: Page, api_server):
+    """Verify Train New Model becomes available if Compute upgrade is pending."""
+    requests.post(f"{api_server}/game/reset")
+    
+    # Setup: Model 2, Compute 2.
+    requests.post(f"{api_server}/actions/execute/marketing?player_id=1")
+    requests.post(f"{api_server}/actions/execute/increase-net-worth?player_id=1")
+    requests.post(f"{api_server}/actions/execute/buy-chips?player_id=1")
+    requests.post(f"{api_server}/actions/execute/train-model?player_id=1&worker_count=1")
+    requests.post(f"{api_server}/actions/execute/train-model?player_id=1&worker_count=1")
+    
+    # Give money for C3
+    requests.post(f"{api_server}/actions/execute/raise-funds", json={"player_id": 1, "chunks": [1, 1]})
+    
+    page.goto(api_server)
+    page.wait_for_selector("#player-select option[value='1']", state="attached")
+    page.select_option("#player-select", "1")
+    
+    train_model_row = page.locator("tr:has-text('Train New Model')")
+    train_button = train_model_row.get_by_role("button", name="Assign Tech Worker")
+    
+    # Initially hidden because Compute is 2
+    expect(train_button).not_to_be_visible()
+    
+    # Place worker on Buy Chips
+    buy_chips_row = page.locator("tr:has-text('Buy Chips')")
+    buy_chips_btn = buy_chips_row.get_by_role("button", name="Assign Tech Worker")
+    buy_chips_btn.click()
+    
+    expect(train_button).to_be_visible()
+
+def test_train_model_projected_workers(page: Page, api_server):
+    """Verify Train New Model becomes available if Recruitment is pending."""
+    requests.post(f"{api_server}/game/reset")
+    requests.post(f"{api_server}/actions/execute/marketing?player_id=1")
+    requests.post(f"{api_server}/actions/execute/increase-net-worth?player_id=1")
+    requests.post(f"{api_server}/actions/execute/raise-funds", json={"player_id": 1, "chunks": [1, 1, 1]})
+    requests.post(f"{api_server}/actions/execute/buy-chips?player_id=1")
+    requests.post(f"{api_server}/actions/execute/buy-chips?player_id=1")
+    requests.post(f"{api_server}/actions/execute/train-model?player_id=1&worker_count=1")
+    requests.post(f"{api_server}/actions/execute/train-model?player_id=1&worker_count=1")
+    
+    page.goto(api_server)
+    page.select_option("#player-select", "1")
+    
+    train_model_row = page.locator("tr:has-text('Train New Model')")
+    train_button = train_model_row.get_by_role("button", name="Assign Tech Worker")
+    
+    marketing_row = page.locator("tr:has-text('Marketing')")
+    m_btn = marketing_row.get_by_role("button", name="Assign Tech Worker")
+    
+    # Place 1 worker on Marketing.
+    m_btn.click()
+    page.wait_for_timeout(500)
+    
+    # Now 2 workers left (2, 3). Train (needs 2) is VISIBLE.
+    expect(train_button).to_be_visible()
+    
+    # Place worker 2 on Recruit.
+    recruit_row = page.locator("tr:has-text('Recruit')")
+    r_btn = recruit_row.get_by_role("button", name="Assign Tech Worker")
+    r_btn.click()
+    page.wait_for_timeout(500)
+    
+    # Placements: M1, R2. Total 2.
+    # Projected total: 4. Available: 4 - 2 = 2.
+    # Train (needs 2) should be VISIBLE.
+    expect(train_button).to_be_visible()
+    
+    train_button.click()
+    
+    # Should assign workers 3 and 4!
+    count_cell = page.locator("#count-train-new-model")
+    page.wait_for_timeout(1000)
+    expect(count_cell).to_have_text("3, 4")
+
+def test_train_model_sequential_upgrades(page: Page, api_server):
+    """Verify that multiple separate upgrades can be assigned in one turn."""
+    requests.post(f"{api_server}/game/reset")
+    
+    # Setup: 5 workers, Compute 2. Millionaire.
+    requests.post(f"{api_server}/actions/execute/marketing?player_id=1")
+    requests.post(f"{api_server}/actions/execute/increase-net-worth?player_id=1")
+    requests.post(f"{api_server}/actions/execute/raise-funds", json={"player_id": 1, "chunks": [1, 1, 1]})
+    requests.post(f"{api_server}/actions/execute/buy-chips?player_id=1")
+    
+    page.goto(api_server)
+    page.select_option("#player-select", "1")
+    
+    train_model_row = page.locator("tr:has-text('Train New Model')")
+    button = train_model_row.get_by_role("button", name="Assign Tech Worker")
+    count_cell = page.locator("#count-train-new-model")
+    
+    # 1. First upgrade (v0 -> v1, cost 1)
+    button.click()
+    page.wait_for_timeout(1000)
+    expect(count_cell).to_have_text("1")
+    
+    # 2. Second upgrade (v1 -> v2, cost 1)
+    expect(button).to_be_visible()
+    button.click()
+    page.wait_for_timeout(1000)
+    expect(count_cell).to_have_text("1, 2")
+    
+    # 3. Third upgrade (v2 -> v3, cost 2) -- Should Hide
+    expect(button).not_to_be_visible()

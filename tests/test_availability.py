@@ -55,22 +55,13 @@ def test_conditional_actions_fail_without_resources(db_session):
 
 def test_projected_availability_raise_funds_unlocks_net_worth(db_session):
     """
-    Scenario:
-    - Player Funds: $2.
-    - Income: $3 (Set via power/subsidy).
-    - Increase Net Worth Cost: $3. 
-    - Current State: $2 < $3 (Unavailable).
-    - Action 1: Raise Funds (Projected Funds becomes $3
-    - Action 2: Increase Net Worth (Cost $3).
-    - Checks: Action 2 should NOT fail.
+    Verify that Raise Funds (providing projected income) unlocks cost-dependent actions like Increase Net Worth.
     """
     player = db_session.get(Player, 1)
     player.corporate_funds = 2
-    player.net_worth_level = 0 # Startup
-    # Needed for Increase Net Worth:
-    # Cost: $3 to get to Millionaire (1).
-    # Reputation: min -3. (Default 0 is fine).
+    player.net_worth_level = 0
     
+    # Cost to Millionaire is 3. Need +1 fund.
     # Set Income to 3 ensures Raise Funds gives +3.
     player.power = 3 
     player.subsidy_tokens = 0
@@ -81,8 +72,7 @@ def test_projected_availability_raise_funds_unlocks_net_worth(db_session):
     res1 = place_worker(db_session, player.id, 1, "raise_funds")
     assert "error" not in res1
     
-    # 2. Place Worker 2 on Increase Net Worth
-    # The backend projection logic must handle this.
+    # 2. Place Worker 2 on Increase Net Worth (Projected Funds -> 5)
     res2 = place_worker(db_session, player.id, 2, "increase_net_worth")
     
     assert "error" not in res2, f"Projected funds should allow action. Got: {res2.get('error')}"

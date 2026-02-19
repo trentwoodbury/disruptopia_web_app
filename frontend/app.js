@@ -8,8 +8,8 @@ const ACTIONS = [
 ];
 
 const REGIONS = [
-    "North America", "South America", "Europe", "Africa", "Middle East",
-    "Central Asia", "East Asia", "South Asia", "Southeast Asia", "Oceania"
+    "Northwest Americas", "Northeast Americas", "Western Europe", "Eastern Europe", "Northeast Asia",
+    "Western Americas", "South America", "Africa", "Middle East", "Southeast Asia"
 ];
 
 const WORLD_MAP = {
