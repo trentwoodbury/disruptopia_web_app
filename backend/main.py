@@ -180,6 +180,34 @@ def get_game_state(game_id: int, db: Session = Depends(get_db)):
     }
 
 
+@app.get("/game/{game_id}/player/{player_id}/availability")
+def get_player_availability(game_id: int, player_id: int, ignore_workers_check: bool = False, db: Session = Depends(get_db)):
+    """
+    Returns the availability of all actions for a specific player based on their PROJECTED state.
+    This accounts for workers already placed in the current round.
+    """
+    from backend.availability import ActionValidator
+    
+    # 1. Get the player's projected state (next worker to be placed)
+    player = db.get(models.Player, player_id)
+    if not player:
+        raise HTTPException(status_code=404, detail="Player not found")
+        
+    projected_state = game_engine.get_projected_player_state(db, player_id, 99)
+    mods = game_engine.get_player_modifiers(db, player_id)
+    
+    # Calculate workers remaining
+    current_placements = db.query(models.WorkerPlacement).filter(
+        models.WorkerPlacement.game_id == game_id,
+        models.WorkerPlacement.player_id == player_id
+    ).count()
+    
+    workers_remaining = projected_state.get("total_workers", 3) - current_placements
+    
+    validator = ActionValidator(projected_state, workers_remaining, mods, ignore_worker_check=ignore_workers_check)
+    return validator.get_availability_report()
+
+
 # --- Step-by-Step Resolution Endpoints ---
 
 @app.post("/actions/execute/buy-chips")

@@ -62,6 +62,16 @@ async function refreshData() {
         const response = await fetch(`http://127.0.0.1:8000/game/${GAME_ID}/state`);
         currentGameState = await response.json();
 
+        // [NEW] Fetch Accessibility Report
+        if (PLAYER_ID) {
+            try {
+                const availRes = await fetch(`http://127.0.0.1:8000/game/${GAME_ID}/player/${PLAYER_ID}/availability`);
+                if (availRes.ok) {
+                    currentGameState.availability = await availRes.json();
+                }
+            } catch (e) { console.warn("Availability fetch failed", e); }
+        }
+
         // 1. Update Player Selector if needed
         updatePlayerSelector(currentGameState.players);
 
@@ -271,134 +281,21 @@ function updateUI(me) {
 // --- VALIDATION HELPERS ---
 
 function isActionAvailable(actionSlug, player, placementCount = 0) {
-    if (!player) return false;
-
-    // Convert to state dict similar to backend for easy comparison
-    // Note: This is an approximation. Ideally backend provides a validation endpoint, 
-    // but we can do client-side pre-checks for UI feedback.
-
-    // Always Available Actions
-    if (['raise_funds', 'play_card', 'marketing'].includes(actionSlug)) {
+    if (!currentGameState || !currentGameState.availability) {
+        // Fallback to optimistic logic if API not yet fetched
         return true;
     }
 
-    // CALCULATE PROJECTED STATE
-    let projectedFunds = player.corporate_funds;
-    let projectedCompute = player.compute_level || 1;
-    let projectedTotalWorkers = player.total_worker_count || 3;
+    // The API uses specific slugs. map them.
+    // raise_funds, play_card, marketing, buy_chips, recruit, train_model, increase_net_worth, scale_presence
 
-    if (currentGameState && currentGameState.placements) {
-        const myPlacements = currentGameState.placements.filter(p => p.player_id === player.id);
+    let key = actionSlug;
+    if (key === 'train_new_model') key = 'train_model';
 
-        // projectedFunds += (myRaiseFunds * player.income);
-        const myRaiseFunds = myPlacements.filter(p => p.action_type === 'raise_funds').length;
-        projectedFunds += (myRaiseFunds * (player.income || 3));
+    const report = currentGameState.availability[key];
+    if (!report) return true; // Default to true if missing
 
-        // projectedCompute
-        projectedCompute += myPlacements.filter(p => p.action_type === 'buy_chips').length;
-
-        // projectedTotalWorkers
-        projectedTotalWorkers += myPlacements.filter(p => p.action_type === 'recruit').length;
-    }
-
-    // For Scale Presence, we need valid regions, but here we just check funds/limits
-    if (actionSlug === 'scale_presence') {
-        const costIdx = (player.presence_count || 1) - 1;
-        const cost = PRESENCE_COSTS_LIST[costIdx];
-        if (cost !== undefined && projectedFunds < cost) return false;
-        // Check max presence?
-        if ((player.presence_count || 1) >= 10) return false;
-    }
-
-    if (actionSlug === 'increase_net_worth') {
-        const nextNw = player.net_worth + 1;
-        if (nextNw > 2) return false;
-        // Costs hardcoded in client or passed? We don't have them in client easily except for display logic.
-        // Let's rely on basic checks or add config to client globally properly.
-        // For now, let's just use the known rules:
-        // Millionaire (1): $3, -2 Rep.
-        // Billionaire (2): $5, -4 Rep.
-        if (nextNw === 1) {
-            if (projectedFunds < 3) return false;
-            // Rep check: floor is -3. If rep - 2 < -3, fail.
-            if (player.reputation - 2 < -3) return false;
-        } else if (nextNw === 2) {
-            if (projectedFunds < 5) return false;
-            if (player.reputation - 4 < -3) return false;
-        }
-    }
-
-    if (actionSlug === 'recruit') {
-        const nextWorker = player.total_worker_count + 1;
-        if (nextWorker > 8) return false;
-        const cost = WORKER_COSTS[nextWorker];
-        if (!cost) return false;
-        const money = parseInt(cost.replace('$', ''));
-        if (projectedFunds < money) return false;
-
-        // Min NW
-        if (nextWorker >= 5 && player.net_worth < 1) return false;
-        if (nextWorker >= 7 && player.net_worth < 2) return false;
-    }
-
-    // ... train_new_model ...
-    // Train Model Logic (Requires checking next version cost)
-    if (actionSlug === 'train_model') {
-        // Calculate projected version based on existing train_model placements
-        const myTrainPlacements = currentGameState.placements.filter(
-            p => p.player_id === player.id && p.action_type === 'train_model'
-        );
-
-        // This is tricky. If we already placed workers for an upgrade, we need to know
-        // what version we'll be AFTER those resolve.
-        // For simplicity: check how many workers are placed.
-        let workersUsedForTraining = myTrainPlacements.length;
-        let pVersion = player.model_version;
-
-        // Progress through versions using placed workers
-        while (pVersion < 7) {
-            const nextV = pVersion + 1;
-            const costStr = MODEL_COSTS[nextV] || "1w";
-            const cost = parseInt(costStr.replace('w', ''));
-            if (workersUsedForTraining >= cost) {
-                workersUsedForTraining -= cost;
-                pVersion++;
-            } else {
-                break;
-            }
-        }
-
-        const nextTargetV = pVersion + 1;
-        if (nextTargetV > 7) return false;
-
-        const costStr = MODEL_COSTS[nextTargetV] || "1w";
-        const reqWorkers = parseInt(costStr.replace('w', ''));
-
-        // Requirement Check: Enough Workers Left?
-        const placedCount = currentGameState.placements.filter(p => p.player_id === PLAYER_ID).length;
-        const availableWorkers = projectedTotalWorkers - placedCount;
-        if (availableWorkers < reqWorkers) return false;
-
-        // Requirement Check: Compute and Net Worth
-        if (projectedCompute < nextTargetV) return false;
-        if (nextTargetV >= 3 && nextTargetV <= 4 && player.net_worth < 1) return false;
-        if (nextTargetV >= 5 && player.net_worth < 2) return false;
-    }
-
-    if (actionSlug === 'buy_chips') {
-        const nextComp = player.compute_level + 1;
-        if (nextComp > 7) return false;
-        const costStr = COMPUTE_COSTS[nextComp];
-        if (!costStr) return false;
-        const money = parseInt(costStr.replace('$', ''));
-        if (projectedFunds < money) return false;
-
-        // NW Req
-        if (nextComp >= 3 && nextComp <= 4 && player.net_worth < 1) return false;
-        if (nextComp >= 5 && player.net_worth < 2) return false;
-    }
-
-    return true;
+    return report.available;
 }
 async function placeWorker(actionName) {
     if (!currentGameState || !PLAYER_ID) {
@@ -709,6 +606,17 @@ async function startStrategyExecution() {
                 }
                 // Handle Interactive: Recruit
                 else if (pl.action_type === "recruit") {
+                    // Fetch optimistic availability (ignoring that we currently have 0 workers left in the strict sense)
+                    // so that the UI knows what we CAN afford with this NEW worker.
+                    try {
+                        const availRes = await fetch(`http://127.0.0.1:8000/game/${GAME_ID}/player/${player.id}/availability?ignore_workers_check=true`);
+                        if (availRes.ok) {
+                            currentGameState.availability = await availRes.json();
+                        }
+                    } catch (e) {
+                        console.warn("Optimistic availability fetch failed", e);
+                    }
+
                     const validateRecruitTarget = (opt) => {
                         let s = opt.toLowerCase().replace(/ /g, '_');
                         if (s === 'train_new_model') s = 'train_model';
