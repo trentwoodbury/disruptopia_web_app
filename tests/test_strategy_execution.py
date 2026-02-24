@@ -91,7 +91,7 @@ def test_raise_funds_grouping(db_session):
     assert resp.status_code == 200
     data = resp.json()
     assert len(data["sequence"]) == 2
-    # Sequence 0: Siphons $3, draws income (capped at 8 for 1 worker).
+    # Siphons $3 once at start, draws income.
     # Since income is 3, draws 3.
-    assert data["sequence"][0]["siphoned"] == 3
+    assert data["total_siphoned"] == 3
     assert data["sequence"][0]["drawn"] == 3

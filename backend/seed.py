@@ -116,7 +116,7 @@ def seed_initial_game():
 
         # 3. Create Definitions and physical Components
         for data in CARD_LIBRARY:
-            # Create the shared definition
+                # Create the shared definition
             detail = CardDetails(
                 name=data["name"],
                 is_effect=data["is_effect"],
@@ -124,6 +124,7 @@ def seed_initial_game():
                 cost=data["cost"],
                 deck=data["deck"],
                 effect_slug=data.get("effect_slug"),
+                image_file=data.get("image_file") if data.get("image_file") else f"{data['deck']}_cards/" + data.get("name") + ".png"
             )
             db.add(detail)
             db.flush()  # Get detail.id without committing yet
@@ -141,7 +142,27 @@ def seed_initial_game():
                 db.add(new_card)
 
         db.commit()
-        print("Database re-seeded successfully with Card Library and Components.")
+
+        # Seed Influence & Research specific cards
+        from backend.seed_cards import seed_influence_cards
+        from backend.seed_research_cards import seed_research_cards
+        seed_influence_cards(db, new_game.id)
+        seed_research_cards(db, new_game.id)
+
+        from sqlalchemy import func
+        # 4. INITIAL CARD DRAW (3 per player: 1 Research, 1 Influence, 1 Sabotage)
+        for player in [p1, p2]:
+             for deck in [ZoneType.RESEARCH_DECK.value, ZoneType.INFLUENCE_DECK.value, ZoneType.SABOTAGE_DECK.value]:
+                 card = db.query(Component).filter(
+                     Component.game_id == new_game.id,
+                     Component.zone == deck
+                 ).order_by(func.random()).first()
+                 if card:
+                     card.zone = f"hand_p{player.id}"
+                     card.owner_id = player.id
+
+        db.commit()
+        print("Database re-seeded successfully with Card Library and Components and Initial Hands.")
 
     except Exception as e:
         print(f"Error: {e}")

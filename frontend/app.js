@@ -276,6 +276,94 @@ function updateUI(me) {
         const cell = document.getElementById(`count-${action.toLowerCase().replace(/ /g, '-')}`);
         if (cell) cell.innerText = workerIds || "—";
     });
+
+    renderPlayerHand(me);
+    checkHandLimit(me);
+}
+
+let isDiscarding = false;
+function checkHandLimit(player) {
+    if (isDiscarding) return; // Prevent multiple modals
+    const limit = player.hand_limit || 5;
+    if (player.hand && player.hand.length > limit) {
+        promptDiscardModal(player, limit);
+    }
+}
+
+function promptDiscardModal(player, limit) {
+    isDiscarding = true;
+    const modal = document.getElementById('choice-modal');
+    const titleEl = document.getElementById('modal-title');
+    const descEl = document.getElementById('modal-desc');
+    const optionsEl = document.getElementById('modal-options');
+
+    titleEl.innerText = "Hand Limit Exceeded";
+    descEl.innerText = `You have ${player.hand.length} cards, but your limit is ${limit}. Please select a card to discard.`;
+    optionsEl.innerHTML = "";
+
+    player.hand.forEach(card => {
+        const btn = document.createElement('button');
+        const displayName = card.name.split('_').map(w => w.charAt(0).toUpperCase() + w.slice(1)).join(' ');
+        btn.innerText = `Discard: ${displayName}`;
+        btn.style.padding = "10px";
+        btn.style.marginTop = "5px";
+        btn.style.cursor = "pointer";
+        btn.style.background = "#222";
+        btn.style.color = "#ff0000";
+        btn.style.border = "1px solid #ff0000";
+
+        btn.onclick = async () => {
+            modal.style.display = "none";
+            // Call API to discard
+            try {
+                const response = await fetch(`http://127.0.0.1:8000/actions/discard?player_id=${PLAYER_ID}&card_id=${card.id}`, { method: "POST" });
+                if (response.ok) {
+                    addLog(`Discarded ${displayName}.`);
+                    isDiscarding = false;
+                    refreshData(); // this will re-trigger limit check if still over
+                } else {
+                    const err = await response.json();
+                    showErrorModal("Discard Failed", err.detail || "Unknown error");
+                    isDiscarding = false;
+                }
+            } catch (err) {
+                showErrorModal("Error", err.message);
+                isDiscarding = false;
+            }
+        };
+        optionsEl.appendChild(btn);
+    });
+
+    modal.style.display = "flex";
+}
+
+function renderPlayerHand(player) {
+    const container = document.getElementById('player-hand');
+    if (!container) return;
+
+    if (!player.hand || player.hand.length === 0) {
+        container.innerHTML = '<div style="color: #888; font-style: italic;">Hand is empty.</div>';
+        return;
+    }
+
+    container.innerHTML = player.hand.map(card => {
+        const costStr = card.cost > 0 ? `Cost: ${card.cost}W` : "Free";
+        const typeStr = card.is_effect ? "EFFECT" : "ACTION";
+        const imgPath = card.image_file ? `assets/${card.image_file}` : '';
+        const displayName = card.name.split('_').map(w => w.charAt(0).toUpperCase() + w.slice(1)).join(' ');
+
+        return `
+        <div style="border: 1px solid #00ff41; background: #111; width: 160px; height: 260px; padding: 10px; display: flex; flex-direction: column; align-items: center; border-radius: 5px; box-sizing: border-box;">
+            <div style="font-weight: bold; font-size: 0.8rem; text-align: center; margin-bottom: 5px; height: 35px; display: flex; align-items: center; justify-content: center;">${displayName}</div>
+            <img src="${imgPath}" alt="${displayName}" style="width: 120px; height: 90px; object-fit: cover; margin-bottom: 5px; border: 1px solid #333;" onerror="this.src='data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHdpZHRoPSIxMjAiIGhlaWdodD0iOTAiPjxyZWN0IHdpZHRoPSIxMDAlIiBoZWlnaHQ9IjEwMCUiIGZpbGw9IiMzMzMiLz48dGV4dCB4PSI2MCIgeT0iNDUiIGZvbnQtZmFtaWx5PSJDb3VyaWVyIE5ldyIgZm9udC1zaXplPSIxMiIgZmlsbD0iIzg4OCIgdGV4dC1hbmNob3I9Im1pZGRsZSIgZG9taW5hbnQtYmFzZWxpbmU9Im1lZGlhbGUiPk5PIElNRzwvdGV4dD48L3N2Zz4='">
+            <div style="font-size: 0.7rem; color: #00ff41; margin-bottom: 5px; border-bottom: 1px solid #333; width: 100%; text-align: center; padding-bottom: 3px;">${typeStr} | ${costStr}</div>
+            <div style="font-size: 0.65rem; color: #ddd; text-align: center; overflow-y: auto; flex-grow: 1; width: 100%;">
+                ${card.requirements ? `<div style="color: #ffcc00; margin-bottom: 3px;">[Req: ${card.requirements}]</div>` : ''}
+                ${card.description || 'No description available.'}
+            </div>
+        </div>
+        `;
+    }).join('');
 }
 
 // --- VALIDATION HELPERS ---
@@ -356,6 +444,31 @@ async function placeWorker(actionName) {
     }
 
     let targetRegion = null;
+    let targetCardId = null;
+
+    if (actionSlug === 'play_card') {
+        if (!me.hand || me.hand.length === 0) {
+            showErrorModal("Play Card", "You have no cards in your hand to play.");
+            return;
+        }
+
+        const playerOptions = me.hand.map(card => {
+            const displayName = card.name.split('_').map(w => w.charAt(0).toUpperCase() + w.slice(1)).join(' ');
+            const costStr = card.cost > 0 ? ` [Cost: ${card.cost}W]` : " [Free]";
+            return displayName + costStr;
+        });
+
+        const choice = await promptUserChoice("Select Card", "Which card would you like to verify resources for?", playerOptions);
+        if (!choice) return;
+
+        const selectedCard = me.hand.find(card => {
+            const displayName = card.name.split('_').map(w => w.charAt(0).toUpperCase() + w.slice(1)).join(' ');
+            const costStr = card.cost > 0 ? ` [Cost: ${card.cost}W]` : " [Free]";
+            return (displayName + costStr) === choice;
+        });
+        targetCardId = selectedCard.id;
+    }
+
     if (actionSlug === 'scale_presence') {
         const myPresence = new Set([...me.presence_regions]);
 
@@ -400,7 +513,8 @@ async function placeWorker(actionName) {
                 game_id: GAME_ID,
                 action_type: actionSlug,
                 worker_ids: workersToPlace,
-                target_region: targetRegion
+                target_region: targetRegion,
+                target_card_id: targetCardId
             })
         });
 

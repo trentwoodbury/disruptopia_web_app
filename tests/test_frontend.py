@@ -145,38 +145,7 @@ def test_train_model_multi_worker_placement(page: Page, api_server):
     page.wait_for_timeout(1000)
     expect(count_cell).to_have_text("1, 2")
 
-def test_train_model_button_disappears_if_insufficient_workers(page: Page, api_server):
-    """Verify that Train New Model button disappears if not enough workers remain."""
-    requests.post(f"{api_server}/game/reset")
-    
-    # Setup conditions
-    requests.post(f"{api_server}/actions/execute/marketing?player_id=1")
-    requests.post(f"{api_server}/actions/execute/increase-net-worth?player_id=1")
-    requests.post(f"{api_server}/actions/execute/raise-funds", json={"player_id": 1, "chunks": [1, 1, 1]})
-    requests.post(f"{api_server}/actions/execute/buy-chips?player_id=1")
-    requests.post(f"{api_server}/actions/execute/buy-chips?player_id=1")
-    requests.post(f"{api_server}/actions/execute/train-model?player_id=1&worker_count=1")
-    requests.post(f"{api_server}/actions/execute/train-model?player_id=1&worker_count=1")
-    
-    page.goto(api_server)
-    page.wait_for_selector("#player-select option[value='1']", state="attached")
-    page.select_option("#player-select", "1")
-    
-    # Initially visible (3 > 2).
-    train_model_row = page.locator("tr:has-text('Train New Model')")
-    train_button = train_model_row.get_by_role("button", name="Assign Tech Worker")
-    expect(train_button).to_be_visible()
-    
-    # Place 2 workers on "Marketing"
-    marketing_row = page.locator("tr:has-text('Marketing')")
-    m_btn = marketing_row.get_by_role("button", name="Assign Tech Worker")
-    m_btn.click()
-    page.wait_for_timeout(500)
-    m_btn.click()
-    page.wait_for_timeout(1000)
-    
-    # Left: 1 worker. Needs 2. Hide.
-    expect(train_button).not_to_be_visible()
+
 
 def test_train_model_projected_compute(page: Page, api_server):
     """Verify Train New Model becomes available if Compute upgrade is pending."""

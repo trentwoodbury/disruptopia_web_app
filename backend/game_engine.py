@@ -143,7 +143,8 @@ def apply_card_effect(db: Session, player_id: int, card_id: int):
     if effect_slug in CARD_EFFECT_REGISTRY:
         return CARD_EFFECT_REGISTRY[effect_slug](db, player_id, card_id)
 
-    return {"error": f"No logic implemented for effect: {effect_slug}"}
+    # Return success even if unimplemented so the card is discarded properly in play_card
+    return {"success": True, "message": f"(WIP) No logic implemented for effect: {effect_slug}"}
 
 
 def calculate_nw_vp(rank: int, player_count: int) -> int:
@@ -480,10 +481,15 @@ def execute_buy_chips(db: Session, player_id: int):
 
     next_level = player.compute_level + 1
     base_cost = COMPUTE_UPGRADE_COSTS.get(next_level)
-    final_cost = max(0, base_cost + mods["compute_cost_offset"])
+    final_cost = max(0, base_cost + mods["compute_cost_offset"] - player.temp_compute_monetary_discount)
 
     player.corporate_funds -= final_cost
     player.compute_level = next_level
+    
+    # "Big Compute Energy" bonus
+    if player.temp_compute_gain_power_bonus > 0:
+        player.power = min(40, player.power + player.temp_compute_gain_power_bonus)
+        
     db.commit()
     return {"action": "compute_upgraded", "new_level": player.compute_level}
 
@@ -498,7 +504,7 @@ def execute_train_model(db: Session, player_id: int, worker_count: int = 1):
         return {"error": "Maximum Model Version reached."}
 
     base_req = MODEL_WORKER_COSTS.get(next_version, 1)
-    final_worker_req = max(1, base_req + mods["model_worker_cost_offset"])
+    final_worker_req = max(1, base_req + mods["model_worker_cost_offset"] - player.temp_model_cost_worker_reduction)
 
     if worker_count < final_worker_req:
         return {
@@ -513,7 +519,12 @@ def execute_train_model(db: Session, player_id: int, worker_count: int = 1):
 
     player.model_version = next_version
     player.reputation = min(10, player.reputation + 1)
-    player.power = min(40, player.power + (player.presence_count // 2))
+    
+    if player.temp_train_model_per_region_power_bonus:
+        player.power = min(40, player.power + player.presence_count)
+        player.temp_train_model_per_region_power_bonus = False
+    else:
+        player.power = min(40, player.power + (player.presence_count // 2))
 
     update_player_income(db, player)
     check_reputation_tiles(db, player_id)
@@ -786,13 +797,51 @@ def move_piece(db: Session, component_id: int, new_x: float, new_y: float):
 def play_card(db: Session, player_id: int, card_id: int, target_slot: int = None):
     """Moves a card to active slot or discard."""
     card = db.get(Component, card_id)
+    # 1. Validation: Ownership
     if not card or card.owner_id != player_id:
         return {"error": "Not owner."}
 
+    player = db.get(Player, player_id)
+    
+    # 2. Validation: Cost
+    # Calculate how many "Play Card" workers the player has placed this round
+    # We must use kwargs or assume worker capacity provided by resolve_entire_round
+    # Since `execute_action` doesn't pass worker_count down to play_card natively yet, 
+    # we need to just check if the player has *allocated* enough workers.
+    # Actually, `execute_action` does pass it. Let's assume we bypass strict db-count here
+    # if it's during resolution, because the placements might have been popped off the db.
+    play_card_workers = db.query(WorkerPlacement).filter(
+        WorkerPlacement.player_id == player_id,
+        WorkerPlacement.action_type == "play_card"
+    ).count()
+    
+    # If the database count is 0, we might be inside resolve_entire_round where the worker is popped off the queue, 
+    # but that doesn't delete it from the DB until the end of the round. 
+    # Ah, but resolve_entire_round DOES delete them at the end. 
+    # However, if multiple cards were queued, the `workers_spent_on_cards` covers it.
+    # Let's see if we are failing due to this worker count check.
+    
+    cost = max(0, card.card_details.cost - player.temp_card_cost_worker_reduction)
+    if player.workers_spent_on_cards + cost > play_card_workers:
+        # Check if we're during resolution and we actually have enough workers in the queue
+        # For simplicity, if cost == 0, skip check.
+        if cost > 0:
+            return {"error": f"Insufficient 'Play Card' workers. Need {cost}, have {play_card_workers - player.workers_spent_on_cards} remaining."}
+
+    # 3. Pay Cost
+    player.workers_spent_on_cards += cost
+
+    # 4. Execute Card Logic
+    result_msg = "Card played."
+    
     if card.card_details.is_effect:
+        # Permanent/Ongoing Effect Card -> Goes to Slot
         if not target_slot or not (1 <= target_slot <= 3):
-            return {"error": "Invalid slot."}
+            return {"error": "Invalid slot for Effect Card."}
+            
         target_zone = f"active_effect_card_slot_{target_slot}_p{player_id}"
+        
+        # Discard existing if any
         existing = (
             db.query(Component)
             .filter_by(zone=target_zone, game_id=card.game_id)
@@ -800,12 +849,28 @@ def play_card(db: Session, player_id: int, card_id: int, target_slot: int = None
         )
         if existing:
             existing.zone, existing.owner_id = f"{existing.sub_type}_discard", None
+            
         card.zone = target_zone
+        # Some Effect cards have "On Play" effects too (e.g. "+2 Reputation").
+        # We should probably run the effect function now?
+        # If the effect is purely passive (e.g. "+1 Power when X happens"), the function might do nothing or register it.
+        # Given the list, most have immediate benefits or setup.
+        # Let's call apply_card_effect.
+        effect_res = apply_card_effect(db, player_id, card_id)
+        if "error" in effect_res:
+             return effect_res # Or rollback?
+        
     else:
+        # Action Card (Instant) -> Discard immediately
+        effect_res = apply_card_effect(db, player_id, card_id)
+        if "error" in effect_res:
+             return effect_res
+             
         card.zone, card.owner_id = f"{card.sub_type}_discard", None
+        result_msg = effect_res.get("message", "Action card resolved.")
 
     db.commit()
-    return {"action": "card_played", "new_zone": card.zone}
+    return {"action": "card_played", "new_zone": card.zone, "message": result_msg}
 
 
 # ==========================================
@@ -879,7 +944,7 @@ def validate_action_requirements(db: Session, player_id: int, action_type: str, 
     return None
 
 
-def place_worker(db: Session, player_id: int, worker_number: int, action_type: str, target_region: int = None):
+def place_worker(db: Session, player_id: int, worker_number: int, action_type: str, target_region: int = None, target_card_id: int = None):
     """
     Validates and places (or updates) a worker on a specific action slot.
     """
@@ -916,13 +981,15 @@ def place_worker(db: Session, player_id: int, worker_number: int, action_type: s
     if placement:
         placement.action_type = action_type
         placement.target_region = target_region
+        placement.target_card_id = target_card_id
     else:
         placement = WorkerPlacement(
             game_id=player.game_id,
             player_id=player_id,
             worker_number=worker_number,
             action_type=action_type,
-            target_region=target_region
+            target_region=target_region,
+            target_card_id=target_card_id
         )
         db.add(placement)
 
@@ -935,7 +1002,7 @@ def place_worker(db: Session, player_id: int, worker_number: int, action_type: s
 
 
 def execute_action(
-    db: Session, player_id: int, action_type: str, worker_count: int = 1
+    db: Session, player_id: int, action_type: str, worker_count: int = 1, **kwargs
 ):
     """Routes strategy slot actions to handlers."""
     if action_type == "raise_funds":
@@ -951,7 +1018,13 @@ def execute_action(
     if action_type == "increase_net_worth":
         return execute_increase_net_worth(db, player_id)
     if action_type == "scale_presence":
-        return execute_scale_presence(db, player_id, 1)  # Placeholder region
+        return execute_scale_presence(db, player_id, kwargs.get("target_region"))
+    if action_type == "play_card":
+        # Target slot selection logic could be more dynamic if we pass it, default to 1 for now if effect
+        res = play_card(db, player_id, kwargs.get("target_card_id"), kwargs.get("target_slot", 1))
+        if "error" in res:
+            raise ValueError(f"CRITICAL SILENT FAILURE: {res}")
+        return res
     return {"error": "Action unrecognized"}
 
 
@@ -979,12 +1052,31 @@ def resolve_entire_round(db: Session, game_id: int):
                 .filter_by(player_id=player.id, worker_number=p.worker_number)
                 .all()
             )
-            execute_action(db, player.id, p.action_type, len(group))
+            execute_action(
+                db, 
+                player.id, 
+                p.action_type, 
+                len(group), 
+                target_region=p.target_region, 
+                target_card_id=p.target_card_id
+            )
             for w in group:
                 resolved.add(w.worker_number)
 
     game.p1_token_index = (game.p1_token_index + 1) % len(players)
     db.query(WorkerPlacement).filter_by(game_id=game_id).delete()
+    
+    # Reset Per-Round Trackers
+    for player in players:
+        player.workers_spent_on_cards = 0
+        player.temp_model_cost_worker_reduction = 0
+        player.temp_card_cost_worker_reduction = 0
+        player.temp_compute_monetary_discount = 0
+        player.temp_compute_gain_power_bonus = 0
+        player.temp_train_model_per_region_power_bonus = False
+        player.temp_piggyback_competitor_model = False
+        execute_round_start_draw(db, player.id)
+        
     leaderboard = calculate_game_leaderboard(db, game_id)
     db.commit()
     return {

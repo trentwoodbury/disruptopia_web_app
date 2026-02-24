@@ -50,6 +50,15 @@ class Player(Base):
     worker_placements: Mapped[List["WorkerPlacement"]] = relationship(
         back_populates="player"
     )
+    workers_spent_on_cards: Mapped[int] = mapped_column(Integer, default=0)
+
+    # --- Temporary Round Modifiers (Reset each round) ---
+    temp_model_cost_worker_reduction: Mapped[int] = mapped_column(Integer, default=0)
+    temp_card_cost_worker_reduction: Mapped[int] = mapped_column(Integer, default=0)
+    temp_compute_monetary_discount: Mapped[int] = mapped_column(Integer, default=0)
+    temp_compute_gain_power_bonus: Mapped[int] = mapped_column(Integer, default=0)
+    temp_train_model_per_region_power_bonus: Mapped[bool] = mapped_column(Boolean, default=False)
+    temp_piggyback_competitor_model: Mapped[bool] = mapped_column(Boolean, default=False)
 
     # --- Stats (Calculated & Stored for UI) ---
     power: Mapped[int] = mapped_column(Integer, default=0)
@@ -85,6 +94,9 @@ class CardDetails(Base):
         String(50)
     )  # One of the CardCategory Enum values.
     effect_slug: Mapped[str] = mapped_column(String(50), nullable=True)
+    description: Mapped[str] = mapped_column(String, nullable=True) # Full text description
+    requirements: Mapped[str] = mapped_column(String, nullable=True) # Text requirements for display
+    image_file: Mapped[str] = mapped_column(String(100), nullable=True) # Filename in assets
 
 
 class Component(Base):
@@ -134,6 +146,7 @@ class WorkerPlacement(Base):
     # (e.g., 'buy_chips', 'raise_funds', 'recruit')
     action_type: Mapped[str] = mapped_column(String(50))
     target_region: Mapped[Optional[int]] = mapped_column(Integer)  # For Scale Presence
+    target_card_id: Mapped[Optional[int]] = mapped_column(Integer) # For Play Card
 
     player: Mapped["Player"] = relationship(back_populates="worker_placements")
 

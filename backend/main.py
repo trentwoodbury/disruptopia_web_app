@@ -1,5 +1,5 @@
 from fastapi import FastAPI, Depends, HTTPException, WebSocket, WebSocketDisconnect
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, joinedload
 from typing import List, Dict
 
 from starlette.middleware.cors import CORSMiddleware
@@ -81,7 +81,8 @@ async def place_worker(req: schemas.ActionRequest, db: Session = Depends(get_db)
             player_id=req.player_id,
             worker_number=worker_id,
             action_type=req.action_type,
-            target_region=req.target_region
+            target_region=req.target_region,
+            target_card_id=req.target_card_id
         )
         if "error" in last_result:
             raise HTTPException(status_code=400, detail=last_result["error"])
@@ -162,6 +163,23 @@ def get_game_state(game_id: int, db: Session = Depends(get_db)):
                 "personal_funds": p.personal_funds,
                 "presence_count": p.presence_count,
                 "presence_regions": [pres.region_id for pres in p.presence],
+                "hand_limit": game_engine.get_player_modifiers(db, p.id)["hand_limit"],
+                "hand": [
+                    {
+                        "id": c.id,
+                        "name": c.card_details.name,
+                        "is_effect": c.card_details.is_effect,
+                        "cost": c.card_details.cost,
+                        "description": c.card_details.description,
+                        "requirements": c.card_details.requirements,
+                        "image_file": c.card_details.image_file,
+                        "effect_slug": c.card_details.effect_slug
+                    } 
+                    for c in db.query(models.Component).options(joinedload(models.Component.card_details)).filter(
+                        models.Component.game_id == game_id,
+                        models.Component.zone == f"hand_p{p.id}"
+                    ).all()
+                ]
             }
             for p in players
         ],
@@ -170,7 +188,8 @@ def get_game_state(game_id: int, db: Session = Depends(get_db)):
                 "player_id": pl.player_id,
                 "action_type": pl.action_type,
                 "worker_number": pl.worker_number,
-                "target_region": pl.target_region
+                "target_region": pl.target_region,
+                "target_card_id": pl.target_card_id
             }
             for pl in db.query(models.WorkerPlacement)
             .filter(models.WorkerPlacement.game_id == game_id)
@@ -266,6 +285,28 @@ def execute_raise_funds(req: schemas.RaiseFundsRequest, db: Session = Depends(ge
         raise HTTPException(status_code=400, detail=result["error"])
     return result
 
+@app.post("/actions/discard")
+def discard_card(player_id: int, card_id: int, db: Session = Depends(get_db)):
+    result = game_engine.discard_card(db, player_id, card_id)
+    if "error" in result:
+        raise HTTPException(status_code=400, detail=result["error"])
+    return result
+
+@app.post("/actions/draw-round-start")
+def draw_round_start(player_id: int, bonus_deck: str = None, db: Session = Depends(get_db)):
+    from backend.enums import ZoneType
+    deck_enum = None
+    if bonus_deck:
+        try:
+            deck_enum = ZoneType(bonus_deck)
+        except ValueError:
+            raise HTTPException(status_code=400, detail="Invalid bonus deck")
+            
+    result = game_engine.execute_round_start_draw(db, player_id, deck_enum)
+    if "error" in result:
+        raise HTTPException(status_code=400, detail=result["error"])
+    return result
+
 
 @app.post("/game/{game_id}/finish-round")
 def finish_round(game_id: int, db: Session = Depends(get_db)):
@@ -279,7 +320,18 @@ def finish_round(game_id: int, db: Session = Depends(get_db)):
     # 2. Clear placements
     db.query(models.WorkerPlacement).filter_by(game_id=game_id).delete()
     
-    # 3. Calculate final results
+    # 3. Reset Per-Round Trackers and Draw Cards
+    for player in players:
+        player.workers_spent_on_cards = 0
+        player.temp_model_cost_worker_reduction = 0
+        player.temp_card_cost_worker_reduction = 0
+        player.temp_compute_monetary_discount = 0
+        player.temp_compute_gain_power_bonus = 0
+        player.temp_train_model_per_region_power_bonus = False
+        player.temp_piggyback_competitor_model = False
+        game_engine.execute_round_start_draw(db, player.id)
+    
+    # 4. Calculate final results
     leaderboard = game_engine.calculate_game_leaderboard(db, game_id)
     db.commit()
     

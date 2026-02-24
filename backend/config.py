@@ -118,14 +118,6 @@ REPUTATION_TILE_POOL = {
 # Assuming CardCategory is already imported or defined in your config
 CARD_LIBRARY = [
     {
-        "name": "good_ol_corporate_espionage",
-        "is_effect": True,
-        "qty": 5,
-        "cost": 2,
-        "deck": CardCategory.INFLUENCE.value,
-        "effect_slug": "corporate_espionage",
-    },
-    {
         "name": "unethical_data_source",
         "is_effect": False,
         "qty": 10,
@@ -142,11 +134,12 @@ CARD_LIBRARY = [
         "effect_slug": "nerdy_server_optimization",
     },
     {
-        "name": "hire_a_lobbyist",
+        "name": "dummy_sabotage",
         "is_effect": False,
-        "qty": 5,
+        "qty": 10,
         "cost": 1,
-        "deck": CardCategory.INFLUENCE.value,
-        "effect_slug": "hire_a_lobbyist",
-    },
+        "deck": CardCategory.SABOTAGE.value,
+        "effect_slug": "dummy_sabotage",
+        "image_file": "sabotage_cards/dummy_sabotage.png"
+    }
 ]

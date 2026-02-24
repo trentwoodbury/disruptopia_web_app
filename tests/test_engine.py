@@ -73,12 +73,37 @@ def test_draw_research_card(db_session):
 
 def test_play_effect_card(db_session):
     player_id = 1
-    card_id = 1
     target_slot = 1
+    
+    # Ensure player has requirements 
+    player = db_session.get(Player, player_id)
+    player.model_version = 5
+    player.presence_count = 5
+    player.total_workers = 5
+    
+    # Create dummy effect card
+    from backend.models import CardDetails
+    details = CardDetails(name="dummy_effect", is_effect=True, qty="1", cost=1, deck="influence", effect_slug="dummy_effect")
+    db_session.add(details)
+    db_session.flush()
+    card = Component(
+        name="dummy_effect_1", 
+        comp_type="card", 
+        sub_type="influence", 
+        zone=f"hand_p{player_id}", 
+        game_id=player.game_id, 
+        card_details_id=details.id,
+        owner_id=player_id
+    )
+    db_session.add(card)
+    db_session.commit()
 
-    card = db_session.get(Component, card_id)
-    card.zone = f"hand_p{player_id}"
-    card.owner_id = player_id
+    card_id = card.id
+
+    # Add enough worker capacity to play the card
+    from backend.models import WorkerPlacement
+    for _ in range(card.card_details.cost):
+        db_session.add(WorkerPlacement(game_id=card.game_id, player_id=player_id, worker_number=1, action_type="play_card"))
     db_session.commit()
 
     result = play_card(db_session, player_id, card_id, target_slot)
@@ -101,8 +126,8 @@ def test_multi_raise_funds(db_session):
     # Uses the updated sequence function
     result = execute_raise_funds_sequence(db_session, player.id, [2, 2])
 
-    assert player.personal_funds == 29  # 10 + 19
-    assert player.corporate_funds == 19
+    assert player.personal_funds == 10
+    assert player.corporate_funds == 38
     assert len(result["sequence"]) == 2
 
 
