@@ -8,16 +8,16 @@ INFLUENCE_CARDS = [
     {
         "title": "Build a Fancy Schmancy HQ",
         "description": "+2 Reputation.\n+2 Power.",
-        "requirements": "**Requirements**:\nPresence in at least 2 Regions.",
+        "requirements": "Presence in at least 2 Regions.",
         "cost": 1,
         "qty": 4,
-        "image": "z_fancy_hq.png", # Using short name if exists, else match title
+        "image": "build_a_fancy_schmancy_hq.png", # Using short name if exists, else match title
         "effect_slug": "build_hq"
     },
     {
         "title": "Good Ol' Corporate Espionage",
         "description": "When a Competitor with shared presence increases their Model Version:\nStartup/Millionaire: +1 Power. \nBillionaire: +2 Power.",
-        "requirements": "**Requirements**:\nModel Version is at least 3.",
+        "requirements": "Model Version is at least 3.",
         "cost": 0,
         "qty": 3,
         "image": "good_ol_corporate_espionage.png",
@@ -26,7 +26,7 @@ INFLUENCE_CARDS = [
     {
         "title": "Defense Contract",
         "description": "If Model Version is less than 5:\nStartup: +1 Power\nMillionaire: +2 Power\nBillionaire: +3 Power",
-        "requirements": "**Requirements**:\nModel Version is less than 5.",
+        "requirements": "Model Version is less than 5.",
         "cost": 1,
         "qty": 3,
         "image": "defense_contract.png",
@@ -35,7 +35,7 @@ INFLUENCE_CARDS = [
     {
         "title": "Intern Volunteer Program",
         "description": "+2 Reputation. \nOnce played, this card cannot be discarded.",
-        "requirements": "**Requirements**:\nPresence in at least 2 Regions.",
+        "requirements": "Presence in at least 2 Regions.",
         "cost": 1,
         "qty": 4,
         "image": "intern_volunteer_program.png",
@@ -44,7 +44,7 @@ INFLUENCE_CARDS = [
     {
         "title": "Management Restructuring",
         "description": "You may sell up to 3 power for $5 per power.",
-        "requirements": "**Requirements**:\nNone.",
+        "requirements": "None.",
         "cost": 1,
         "qty": 2,
         "image": "management_restructuring.png",
@@ -53,7 +53,7 @@ INFLUENCE_CARDS = [
     {
         "title": "Influencer Marketing",
         "description": "Startup: +$6\nMillionaire: +$8\nBillionaire: +$10",
-        "requirements": "**Requirements**:\nNone.",
+        "requirements": "None.",
         "cost": 1,
         "qty": 4,
         "image": "influencer_marketing.png",
@@ -62,7 +62,7 @@ INFLUENCE_CARDS = [
     {
         "title": "Greenwashed Carbon Offsets",
         "description": "+1 Reputation for each Subsidy Token you have.",
-        "requirements": "**Requirements**:\nNone.",
+        "requirements": "None.",
         "cost": 1,
         "qty": 4,
         "image": "greenwashed_carbon_offsets.png",
@@ -71,7 +71,7 @@ INFLUENCE_CARDS = [
     {
         "title": "Celebrity Sponsor World Tour",
         "description": "Increase Presence to 2 Regions, paying only the price of the more expensive Region.",
-        "requirements": "**Requirements**:\nNet Worth Limits Apply.",
+        "requirements": "Net Worth Limits Apply.",
         "cost": 1,
         "qty": 4,
         "image": "celebrity_sponsor_world_tour.png",
@@ -80,7 +80,7 @@ INFLUENCE_CARDS = [
     {
         "title": "Sponsor Free Wifi",
         "description": "You may pay $1 to gain:\nStartup:  +3 Reputation.\nMillionaire: +2 Reputation.\nBillionaire: +1 Reputation.",
-        "requirements": "**Requirements**:\nNone.",
+        "requirements": "None.",
         "cost": 0,
         "qty": 3,
         "image": "sponsor_free_wifi.png",
@@ -89,7 +89,7 @@ INFLUENCE_CARDS = [
     {
         "title": "Debt Fueled Market Expansion",
         "description": "Pay $4 less on all Scale Presence actions this round.",
-        "requirements": "**Requirements**:\nPresence in at least 5 Regions.",
+        "requirements": "Presence in at least 5 Regions.",
         "cost": 1,
         "qty": 5,
         "image": "debt_fueled_market_expansion.png",
@@ -98,7 +98,7 @@ INFLUENCE_CARDS = [
     {
         "title": "Bribe the UN",
         "description": "+1 Power per Region with Presence.",
-        "requirements": "**Requirements**:\nPresence in at most 5 Regions.",
+        "requirements": "Presence in at most 5 Regions.",
         "cost": 1,
         "qty": 3,
         "image": "bribe_the_un.png", # bribe_un.png in sheet, check implementation
@@ -125,7 +125,7 @@ INFLUENCE_CARDS = [
     {
         "title": "Make \"We Care About Your Community\" Ads, Globally",
         "description": "+1 Reputation for every Region where you have Presence.",
-        "requirements": "**Requirements**:\nNone.",
+        "requirements": "None.",
         "cost": 1,
         "qty": 4,
         "image": "make_we_care_about_your_community_ads_globally.png",
@@ -134,7 +134,7 @@ INFLUENCE_CARDS = [
     {
         "title": "Hire a Lobbyist",
         "description": "Startup: +1 Power.\nMillionaire: +2 Power.\nBillionaire: +3 Power. ",
-        "requirements": "**Requirements**:\nNone.",
+        "requirements": "None.",
         "cost": 1,
         "qty": 4,
         "image": "hire_a_lobbyist.png",
@@ -143,7 +143,7 @@ INFLUENCE_CARDS = [
     {
         "title": "Court an Autocrat",
         "description": "+3 Power.\n-1 Reputation for each Region where you have Presence.",
-        "requirements": "**Requirements**:\nReputation is at least 1.",
+        "requirements": "Reputation is at least 1.",
         "cost": 0,
         "qty": 2,
         "image": "court_an_autocrat.png",
@@ -152,16 +152,16 @@ INFLUENCE_CARDS = [
     {
         "title": "Layoffs!",
         "description": "+$3 per Tech Worker you have.\n-1 Tech Worker.",
-        "requirements": "**Requirements**:\nNone.",
+        "requirements": "None.",
         "cost": 1,
         "qty": 3,
-        "image": "layoffs.png",
+        "image": "layoffs!.png",
         "effect_slug": "layoffs"
     },
     {
         "title": "Sign with a VC Investor",
         "description": "Startup: +$4\nMillionaire: +$6\nBillionaire: + $8",
-        "requirements": "**Requirements**:\nLess than $10 in your Corporate Funds.",
+        "requirements": "Less than $10 in your Corporate Funds.",
         "cost": 1,
         "qty": 3,
         "image": "sign_with_a_vc_investor.png",
@@ -170,7 +170,7 @@ INFLUENCE_CARDS = [
     {
         "title": "Collaborate with a University",
         "description": "+2 Reputation\n+1 Power\n+ $5",
-        "requirements": "**Requirements**:\nNone",
+        "requirements": "None",
         "cost": 2,
         "qty": 4,
         "image": "collaborate_with_a_university.png",
@@ -198,7 +198,7 @@ def seed_influence_cards(db: Session, game_id: int):
                 qty=str(card_data["qty"]),
                 deck=CardCategory.INFLUENCE.value,
                 effect_slug=card_data["effect_slug"],
-                image_file=f"influence_cards/{card_data['image']}",
+                image_file=card_data['image'],
                 is_effect=True # Most influence cards are effects. Setup as effects for now.
             )
             db.add(details)
@@ -208,7 +208,7 @@ def seed_influence_cards(db: Session, game_id: int):
              # Update if exists (e.g. schema change)
             details.description = card_data["description"]
             details.requirements = card_data["requirements"]
-            details.image_file = f"influence_cards/{card_data['image']}"
+            details.image_file = card_data['image']
             details.cost = card_data["cost"]
             db.commit()
 

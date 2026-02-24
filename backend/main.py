@@ -82,7 +82,8 @@ async def place_worker(req: schemas.ActionRequest, db: Session = Depends(get_db)
             worker_number=worker_id,
             action_type=req.action_type,
             target_region=req.target_region,
-            target_card_id=req.target_card_id
+            target_card_id=req.target_card_id,
+            target_sub_action=req.target_sub_action
         )
         if "error" in last_result:
             raise HTTPException(status_code=400, detail=last_result["error"])
@@ -163,6 +164,8 @@ def get_game_state(game_id: int, db: Session = Depends(get_db)):
                 "personal_funds": p.personal_funds,
                 "presence_count": p.presence_count,
                 "presence_regions": [pres.region_id for pres in p.presence],
+                "temp_card_cost_worker_reduction": p.temp_card_cost_worker_reduction,
+                "temp_model_cost_worker_reduction": p.temp_model_cost_worker_reduction,
                 "hand_limit": game_engine.get_player_modifiers(db, p.id)["hand_limit"],
                 "hand": [
                     {

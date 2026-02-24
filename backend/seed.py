@@ -124,7 +124,7 @@ def seed_initial_game():
                 cost=data["cost"],
                 deck=data["deck"],
                 effect_slug=data.get("effect_slug"),
-                image_file=data.get("image_file") if data.get("image_file") else f"{data['deck']}_cards/" + data.get("name") + ".png"
+                image_file=data.get("image_file") if data.get("image_file") else f"{data['name']}.png"
             )
             db.add(detail)
             db.flush()  # Get detail.id without committing yet

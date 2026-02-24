@@ -357,9 +357,9 @@ function renderPlayerHand(player) {
             <div style="font-weight: bold; font-size: 0.8rem; text-align: center; margin-bottom: 5px; height: 35px; display: flex; align-items: center; justify-content: center;">${displayName}</div>
             <img src="${imgPath}" alt="${displayName}" style="width: 120px; height: 90px; object-fit: cover; margin-bottom: 5px; border: 1px solid #333;" onerror="this.src='data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHdpZHRoPSIxMjAiIGhlaWdodD0iOTAiPjxyZWN0IHdpZHRoPSIxMDAlIiBoZWlnaHQ9IjEwMCUiIGZpbGw9IiMzMzMiLz48dGV4dCB4PSI2MCIgeT0iNDUiIGZvbnQtZmFtaWx5PSJDb3VyaWVyIE5ldyIgZm9udC1zaXplPSIxMiIgZmlsbD0iIzg4OCIgdGV4dC1hbmNob3I9Im1pZGRsZSIgZG9taW5hbnQtYmFzZWxpbmU9Im1lZGlhbGUiPk5PIElNRzwvdGV4dD48L3N2Zz4='">
             <div style="font-size: 0.7rem; color: #00ff41; margin-bottom: 5px; border-bottom: 1px solid #333; width: 100%; text-align: center; padding-bottom: 3px;">${typeStr} | ${costStr}</div>
-            <div style="font-size: 0.65rem; color: #ddd; text-align: center; overflow-y: auto; flex-grow: 1; width: 100%;">
-                ${card.requirements ? `<div style="color: #ffcc00; margin-bottom: 3px;">[Req: ${card.requirements}]</div>` : ''}
-                ${card.description || 'No description available.'}
+            <div style="font-size: 0.65rem; text-align: center; overflow-y: auto; flex-grow: 1; width: 100%;">
+                ${card.requirements ? `<div style="color: #ffcc00; margin-bottom: 5px;"><strong>Requirements</strong><br/>${card.requirements.replace(/\\n/g, '<br/>')}</div>` : ''}
+                <div style="color: #ffffff;">${card.description ? card.description.replace(/\\n/g, '<br/>') : 'No description available.'}</div>
             </div>
         </div>
         `;
@@ -419,6 +419,60 @@ async function placeWorker(actionName) {
         workersToPlaceCount = parseInt(costStr.replace('w', ''));
     }
 
+    let targetRegion = null;
+    let targetCardId = null;
+    let targetSubAction = null;
+
+    if (actionSlug === 'play_card') {
+        if (!me.hand || me.hand.length === 0) {
+            showErrorModal("Play Card", "You have no cards in your hand to play.");
+            return;
+        }
+
+        // Find how many play_card workers are already placed (we don't count these towards cost, 
+        // they just reduce our total available pool which is handled later).
+        // Actually, workersToPlaceCount needs to be set to the card's specific cost.
+
+        // Let's filter the hand to only show cards the player can afford.
+        // We calculate max workers available first.
+        const usedNumbers = currentGameState.placements.filter(p => p.player_id === PLAYER_ID).map(p => p.worker_number);
+        const myRecruits = currentGameState.placements.filter(p => p.player_id === PLAYER_ID && p.action_type === 'recruit').length;
+        const projectedTotalWorkers = me.total_worker_count + myRecruits;
+        let maxWorkersAvailable = projectedTotalWorkers - usedNumbers.length;
+
+        const playerOptions = me.hand.map(card => {
+            let actualCost = Math.max(0, card.cost - (me.temp_card_cost_worker_reduction || 0));
+            const displayName = card.name.split('_').map(w => w.charAt(0).toUpperCase() + w.slice(1)).join(' ');
+            const costStr = actualCost > 0 ? ` [Cost: ${actualCost}W]` : " [Free]";
+            const affordableStr = actualCost <= maxWorkersAvailable ? "" : " (UNAVAILABLE)";
+            return displayName + costStr + affordableStr;
+        });
+
+        const choice = await promptUserChoice("Select Card", `Which card would you like to play? (Available Workers: ${maxWorkersAvailable})`, playerOptions);
+        if (!choice || choice.includes("(UNAVAILABLE)")) {
+            if (choice) showErrorModal("Insufficient Workers", "You do not have enough Tech Workers to play this card right now.");
+            return;
+        }
+
+        const selectedCard = me.hand.find(card => {
+            let actualCost = Math.max(0, card.cost - (me.temp_card_cost_worker_reduction || 0));
+            const displayName = card.name.split('_').map(w => w.charAt(0).toUpperCase() + w.slice(1)).join(' ');
+            const costStr = actualCost > 0 ? ` [Cost: ${actualCost}W]` : " [Free]";
+            return (displayName + costStr) === choice;
+        });
+
+        targetCardId = selectedCard.id;
+        workersToPlaceCount = Math.max(0, selectedCard.cost - (me.temp_card_cost_worker_reduction || 0));
+    }
+
+    if (actionSlug === 'recruit') {
+        const playerOptions = ACTIONS.filter(a => a !== "Recruit Tech Worker");
+        const choice = await promptUserChoice("Recruit Targeted Worker", "Where should your new Worker be deployed?", playerOptions);
+        if (!choice) return;
+        targetSubAction = choice.toLowerCase().replace(/ /g, '_');
+        if (targetSubAction === 'train_new_model') targetSubAction = 'train_model';
+    }
+
     // 1. Identify which worker numbers are already on the board
     const usedNumbers = currentGameState.placements
         .filter(p => p.player_id === PLAYER_ID)
@@ -438,35 +492,12 @@ async function placeWorker(actionName) {
         }
     }
 
-    if (workersToPlace.length < workersToPlaceCount) {
+    // Edge Case: Free Cards (0 cost) don't need any workers, but we still need to send the payload.
+    // We send an empty array [] if workersToPlaceCount is 0.
+    if (workersToPlaceCount > 0 && workersToPlace.length < workersToPlaceCount) {
         addLog("System: Not enough workers available!");
+        showErrorModal("Insufficient Workers", "You do not have enough Tech Workers available for this action.");
         return;
-    }
-
-    let targetRegion = null;
-    let targetCardId = null;
-
-    if (actionSlug === 'play_card') {
-        if (!me.hand || me.hand.length === 0) {
-            showErrorModal("Play Card", "You have no cards in your hand to play.");
-            return;
-        }
-
-        const playerOptions = me.hand.map(card => {
-            const displayName = card.name.split('_').map(w => w.charAt(0).toUpperCase() + w.slice(1)).join(' ');
-            const costStr = card.cost > 0 ? ` [Cost: ${card.cost}W]` : " [Free]";
-            return displayName + costStr;
-        });
-
-        const choice = await promptUserChoice("Select Card", "Which card would you like to verify resources for?", playerOptions);
-        if (!choice) return;
-
-        const selectedCard = me.hand.find(card => {
-            const displayName = card.name.split('_').map(w => w.charAt(0).toUpperCase() + w.slice(1)).join(' ');
-            const costStr = card.cost > 0 ? ` [Cost: ${card.cost}W]` : " [Free]";
-            return (displayName + costStr) === choice;
-        });
-        targetCardId = selectedCard.id;
     }
 
     if (actionSlug === 'scale_presence') {

@@ -211,6 +211,11 @@ def test_train_model_projected_workers(page: Page, api_server):
     r_btn.click()
     page.wait_for_timeout(500)
     
+    # Handle the target sub-action modal for Recruit
+    # We want to deploy the new worker to "Train New Model"
+    page.locator("#choice-modal button:has-text('Train New Model')").click()
+    page.wait_for_timeout(500)
+    
     # Placements: M1, R2. Total 2.
     # Projected total: 4. Available: 4 - 2 = 2.
     # Train (needs 2) should be VISIBLE.

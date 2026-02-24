@@ -12,6 +12,7 @@ class ActionRequest(BaseModel):
     worker_ids: List[int] = Field(..., examples=[[1], [4, 5]])
     target_region: Optional[int] = None
     target_card_id: Optional[int] = None
+    target_sub_action: Optional[str] = None
 
 
 class CardPlayRequest(BaseModel):

@@ -8,7 +8,7 @@ RESEARCH_CARDS = [
     {
         "title": "New GPU Tech",
         "description": "All Model Upgrades cost 1 fewer Tech Workers this round.",
-        "requirements": "**Requirements**:\nNone.",
+        "requirements": "None.",
         "cost": 1,
         "qty": 4,
         "image": "new_gpu_tech.png",
@@ -22,17 +22,17 @@ RESEARCH_CARDS = [
     {
         "title": "Microdosing Interns",
         "description": "All cards (excluding Active Effect Cards) cost you 1 fewer Tech Workers this round.",
-        "requirements": "**Requirements**:\nNone.",
+        "requirements": "None.",
         "cost": 0,
         "qty": 5,
-        "image": "microdosing_intern.png",
+        "image": "microdosing_interns.png",
         "effect_slug": "microdosing_interns",
         "is_effect": False
     },
     {
         "title": "Unethical Data Source",
         "description": "Draw 2 Research Cards. If you draw \"Data Labelling Sweatshop\" discard both cards and -1 reputation. Otherwise, play 1 drawn card for free.\n*Ignores effect from Content Moderation*.",
-        "requirements": "**Requirements**:\nReputation Limits apply.",
+        "requirements": "Reputation Limits apply.",
         "cost": 0,
         "qty": 4,
         "image": "unethical_data_source.png",
@@ -42,27 +42,27 @@ RESEARCH_CARDS = [
     {
         "title": "Submit a Whitepaper",
         "description": "Take and keep a Tech Worker for free. It can be used this round.",
-        "requirements": "**Requirements**:\nNet Worth Limits apply.",
+        "requirements": "Net Worth Limits apply.",
         "cost": 2,
         "qty": 4,
-        "image": "Submit a Whitepaper.png",
+        "image": "submit_a_whitepaper.png",
         "effect_slug": "whitepaper",
         "is_effect": False
     },
     {
         "title": "Data Labelling Sweatshop",
         "description": "All Model Upgrades cost 2 fewer Tech Workers this Round.\n-2 Reputation.",
-        "requirements": "**Requirements**:\nReputation Limits apply.",
+        "requirements": "Reputation Limits apply.",
         "cost": 1,
         "qty": 2,
-        "image": "data_labeling_sweatshop.png",
+        "image": "data_labelling_sweatshop.png",
         "effect_slug": "sweatshop",
         "is_effect": False
     },
     {
         "title": "Hack a Competitor's Model Parameters",
         "description": "Pay $4 to take the Train Model action.",
-        "requirements": "**Requirements**:\nAt least 1 Competitor with a higher Model Version.\nNet Worth Limits apply.",
+        "requirements": "At least 1 Competitor with a higher Model Version.\nNet Worth Limits apply.",
         "cost": 0,
         "qty": 3,
         "image": "hack_a_competitors_model_parameters.png",
@@ -72,7 +72,7 @@ RESEARCH_CARDS = [
     {
         "title": "Build Recruiting Pipeline",
         "description": "Play the Recruit action twice, paying the price of only the more expensive Tech Worker.",
-        "requirements": "**Requirements**:\nNet Worth Limits apply.",
+        "requirements": "Net Worth Limits apply.",
         "cost": 1,
         "qty": 4,
         "image": "build_recruiting_pipeline.png",
@@ -95,40 +95,40 @@ RESEARCH_CARDS = [
     {
         "title": "Open Source Your Model",
         "description": "+1 Power for every 2 Regions with your Presence.",
-        "requirements": "**Requirements**:\nNone.",
+        "requirements": "None.",
         "cost": 1,
         "qty": 4,
-        "image": "open_source_model.png",
+        "image": "open_source_your_model.png",
         "effect_slug": "open_source",
         "is_effect": False
     },
     {
         "title": "Spaghetti Code Legacy",
         "description": "Recruit a Tech Worker without paying.",
-        "requirements": "**Requirements**:\nNet Worth Limits apply.",
+        "requirements": "Net Worth Limits apply.",
         "cost": 1,
         "qty": 3,
-        "image": "spaghetti_legacy_code.png",
+        "image": "spaghetti_code_legacy.png",
         "effect_slug": "spaghetti_code",
         "is_effect": True # Sheet says Effect.
     },
     {
         "title": "Some Nerdy Server Optimization Thing",
         "description": "+1 Compute for free.",
-        "requirements": "**Requirements**:\nNet Worth Limits apply.",
+        "requirements": "Net Worth Limits apply.",
         "cost": 1,
         "qty": 4,
-        "image": "some_nerdy_optimization.png",
+        "image": "some_nerdy_server_optimization_thing.png",
         "effect_slug": "nerdy_optimization",
         "is_effect": False
     },
     {
         "title": "Big Compute Energy",
         "description": "Every time you increase Compute this round, +2 Power.",
-        "requirements": "**Requirements**:\nNone.",
+        "requirements": "None.",
         "cost": 0,
         "qty": 4,
-        "image": "ChatGPT Image 1 okt. 2025 15_59_46.png",
+        "image": "big_compute_energy.png",
         "effect_slug": "big_compute_energy",
         "is_effect": True # Sheet says Effect. "This round" implies temporary.
     },
@@ -138,14 +138,14 @@ RESEARCH_CARDS = [
         "requirements": "**Requirement**:\nNet Worth Limits apply.\nReputation Limits apply.",
         "cost": 1,
         "qty": 3,
-        "image": "80_slide_powerpoint.png",
+        "image": "80_slide_powerpoint_presented_in_monotone.png",
         "effect_slug": "powerpoint",
         "is_effect": True
     },
     {
         "title": "Burn Out Engineering",
         "description": "+2 Compute for free.\n-1 Tech Worker.",
-        "requirements": "**Requirements**:\nNet Worth Limits apply.\nCompute level is at most 4.",
+        "requirements": "Net Worth Limits apply.\nCompute level is at most 4.",
         "cost": 1,
         "qty": 3,
         "image": "burn_out_engineering.png",
@@ -155,40 +155,40 @@ RESEARCH_CARDS = [
     {
         "title": "Hackathon",
         "description": "Pay up to $3 less when increasing your Compute Level this round.",
-        "requirements": "**Requirements**:\nNone.",
+        "requirements": "None.",
         "cost": 2,
         "qty": 4,
-        "image": "late_night_pizza_hackathon.png",
+        "image": "hackathon.png",
         "effect_slug": "hackathon",
         "is_effect": False
     },
     {
         "title": "New Model Hype",
         "description": "On your next Train Model action, gain 1 Power per every 1 Region with Presence (instead of every 2).",
-        "requirements": "**Requirements**:\nPresence in 7 or fewer Regions.",
+        "requirements": "Presence in 7 or fewer Regions.",
         "cost": 1,
         "qty": 4,
-        "image": "Model Hype.png",
+        "image": "new_model_hype.png",
         "effect_slug": "model_hype",
         "is_effect": False
     },
     {
         "title": "Piggyback Off Competitors",
         "description": "Whenever a competitor with shared presence increases their Model Version this round, you may pay to increase your Compute Version.",
-        "requirements": "**Requirements**:\nNet Worth Limits apply.\nCompute Limits apply.",
+        "requirements": "Net Worth Limits apply.\nCompute Limits apply.",
         "cost": 0,
         "qty": 3,
-        "image": "piggyback_off_competitor_success.png",
+        "image": "piggyback_off_competitors.png",
         "effect_slug": "piggyback",
         "is_effect": False
     },
     {
         "title": "Flexible Remote Work Policy",
         "description": "Take a Tech Worker for free. This can be used starting next round.",
-        "requirements": "**Requirements**:\nNet Worth Limits apply.",
+        "requirements": "Net Worth Limits apply.",
         "cost": 0,
         "qty": 4,
-        "image": "flexible remote work policy.png",
+        "image": "flexible_remote_work_policy.png",
         "effect_slug": "remote_work",
         "is_effect": False
     }
@@ -209,7 +209,7 @@ def seed_research_cards(db: Session, game_id: int):
                 qty=str(card_data["qty"]),
                 deck=CardCategory.RESEARCH.value,
                 effect_slug=card_data["effect_slug"],
-                image_file=f"research_cards/{card_data['image']}",
+                image_file=card_data['image'],
                 is_effect=card_data.get("is_effect", False)
             )
             db.add(details)
@@ -219,7 +219,7 @@ def seed_research_cards(db: Session, game_id: int):
             # Update
             details.description = card_data["description"]
             details.requirements = card_data["requirements"]
-            details.image_file = f"research_cards/{card_data['image']}"
+            details.image_file = card_data['image']
             details.cost = card_data["cost"]
             details.is_effect = card_data.get("is_effect", False)
             db.commit()

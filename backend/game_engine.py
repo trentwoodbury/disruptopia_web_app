@@ -648,7 +648,7 @@ def execute_increase_net_worth(db: Session, player_id: int):
     }
 
 
-def execute_recruit_worker(db: Session, player_id: int, target_action: str):
+def execute_recruit_worker(db: Session, player_id: int, target_action: str, target_region: int = None, target_card_id: int = None):
     """Resolves the Recruit action and immediately places the new worker."""
     player = db.get(Player, player_id)
     next_num = player.total_workers + 1
@@ -672,6 +672,8 @@ def execute_recruit_worker(db: Session, player_id: int, target_action: str):
             player_id=player_id,
             worker_number=next_num,
             action_type=target_action,
+            target_region=target_region,
+            target_card_id=target_card_id
         )
     )
     db.commit()
@@ -944,7 +946,7 @@ def validate_action_requirements(db: Session, player_id: int, action_type: str, 
     return None
 
 
-def place_worker(db: Session, player_id: int, worker_number: int, action_type: str, target_region: int = None, target_card_id: int = None):
+def place_worker(db: Session, player_id: int, worker_number: int, action_type: str, target_region: int = None, target_card_id: int = None, target_sub_action: str = None):
     """
     Validates and places (or updates) a worker on a specific action slot.
     """
@@ -982,6 +984,7 @@ def place_worker(db: Session, player_id: int, worker_number: int, action_type: s
         placement.action_type = action_type
         placement.target_region = target_region
         placement.target_card_id = target_card_id
+        placement.target_sub_action = target_sub_action
     else:
         placement = WorkerPlacement(
             game_id=player.game_id,
@@ -989,7 +992,8 @@ def place_worker(db: Session, player_id: int, worker_number: int, action_type: s
             worker_number=worker_number,
             action_type=action_type,
             target_region=target_region,
-            target_card_id=target_card_id
+            target_card_id=target_card_id,
+            target_sub_action=target_sub_action
         )
         db.add(placement)
 
@@ -1014,7 +1018,9 @@ def execute_action(
     if action_type == "marketing":
         return execute_marketing(db, player_id)
     if action_type == "recruit":
-        return execute_recruit_worker(db, player_id, "marketing")
+        target = kwargs.get("target_sub_action") or "marketing"
+        res = execute_recruit_worker(db, player_id, target, target_region=kwargs.get("target_region"), target_card_id=kwargs.get("target_card_id"))
+        return res
     if action_type == "increase_net_worth":
         return execute_increase_net_worth(db, player_id)
     if action_type == "scale_presence":
@@ -1058,7 +1064,8 @@ def resolve_entire_round(db: Session, game_id: int):
                 p.action_type, 
                 len(group), 
                 target_region=p.target_region, 
-                target_card_id=p.target_card_id
+                target_card_id=p.target_card_id,
+                target_sub_action=p.target_sub_action
             )
             for w in group:
                 resolved.add(w.worker_number)
